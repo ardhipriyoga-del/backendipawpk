@@ -2,12 +2,13 @@
  * API Base URL configuration.
  *
  * URL API dipisahkan dari URL aplikasi agar frontend yang di-host secara statis
- * (Netlify, Vercel, dsb.) tetap bisa memanggil Express API server yang
- * di-deploy di tempat lain (Railway, Render, VPS, dsb.).
+ * (Google Apps Script, Netlify, Vercel, dsb.) tetap bisa memanggil backend
+ * melalui HTTPS.
  *
  * Priority:
- *  1. VITE_API_BASE_URL  — set saat build untuk Netlify/production
- *     Contoh: VITE_API_BASE_URL=https://api.ipaw.example.com
+ *  1. IPAW_BACKEND_URL / VITE_IPAW_BACKEND_URL — backend Netlify untuk
+ *     frontend GAS.
+ *  2. VITE_API_BASE_URL — API server aplikasi Replit untuk mode online biasa.
  *  2. String kosong      — URL relatif, bekerja di local dev (same origin)
  *
  * JANGAN gunakan window.location.origin sebagai base URL API.
@@ -30,6 +31,8 @@ declare global {
   var __IPAW_GAS_HOSTED__: boolean | undefined;
   // Optional runtime override for the GAS deployment URL used by ipawv3.
   var __IPAW_GAS_API_URL__: string | undefined;
+  // Netlify backend URL injected into the standalone GAS bundle.
+  var __IPAW_BACKEND_URL__: string | undefined;
 }
 
 /**
@@ -41,6 +44,17 @@ declare global {
  */
 export const GAS_API_URL =
   'https://script.google.com/macros/s/AKfycbzAnMrxuit5itGRjFMuHy94pEGFBnA_RVKowtQCRJX_OotdaKBwayy5Tuq8-s-K94QUdA/exec';
+
+/**
+ * Public URL of the Netlify Functions backend used by the GAS deployment.
+ *
+ * Set IPAW_BACKEND_URL when generating ipawv3.html. The placeholder is
+ * intentional: it makes a missing deployment configuration explicit instead
+ * of silently sending TrakCare data to the wrong server.
+ */
+export const IPAW_BACKEND_URL =
+  ((import.meta.env.VITE_IPAW_BACKEND_URL as string | undefined) ??
+    'https://DOMAIN-NETLIFY-SAYA.netlify.app').trim().replace(/\/$/, '');
 
 /** Enable safe request/response diagnostics for GAS-hosted/offline builds. */
 export const API_DEBUG = true;
@@ -59,6 +73,119 @@ export interface ApiRequestOptions extends RequestInit {
 export interface ApiRequestResult<T = unknown> {
   response: Response;
   data: T;
+}
+
+export interface IpawApiOptions {
+  method?: string;
+  headers?: HeadersInit;
+  body?: unknown;
+  timeoutMs?: number;
+  debugLabel?: string;
+  cache?: RequestCache;
+}
+
+/**
+ * Single HTTPS client for the GAS → Netlify backend boundary.
+ *
+ * The helper deliberately accepts a structured body instead of making callers
+ * stringify JSON themselves. This keeps timeout, JSON parsing, HTTP errors,
+ * and diagnostics consistent across GET/POST/PUT/PATCH/DELETE requests.
+ */
+export async function ipawApi<T = unknown>(
+  endpoint: string,
+  options: IpawApiOptions = {},
+): Promise<T> {
+  const {
+    method = 'GET',
+    headers: inputHeaders,
+    body,
+    timeoutMs = 20_000,
+    debugLabel = endpoint,
+    cache = 'no-store',
+  } = options;
+  const normalizedMethod = method.toUpperCase();
+  const base = isGasHosted() ? getIpawBackendUrl() : getApiBaseUrl();
+  if (isGasHosted() && !base) {
+    throw new Error('IPAW_BACKEND_URL belum dikonfigurasi.');
+  }
+
+  const target = isGasHosted()
+    ? new URL(endpoint.startsWith('/') ? endpoint.slice(1) : endpoint, `${base}/`).toString()
+    : apiUrl(endpoint);
+  const headers = new Headers(inputHeaders);
+  headers.set('Accept', headers.get('Accept') || 'application/json');
+  let requestBody: BodyInit | undefined;
+  if (body !== undefined && body !== null && normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD') {
+    requestBody = typeof body === 'string' ? body : JSON.stringify(body);
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(target, {
+      method: normalizedMethod,
+      headers,
+      body: requestBody,
+      cache,
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    let payload: any = null;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+      throw new Error(`Backend IPAW mengembalikan response bukan JSON (HTTP ${response.status}).`);
+    }
+    if (!response.ok || payload?.success === false) {
+      throw new Error(payload?.error || `Backend IPAW merespons HTTP ${response.status}.`);
+    }
+    if (API_DEBUG) {
+      console.log(`[IPAW API][${debugLabel}]`, {
+        method: normalizedMethod,
+        status: response.status,
+        ok: response.ok,
+      });
+    }
+    return (payload && Object.prototype.hasOwnProperty.call(payload, 'data')
+      ? payload.data
+      : payload) as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const timeoutError = new Error(`Backend IPAW timeout setelah ${timeoutMs}ms.`);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+export function getIpawBackendUrl(): string {
+  const runtime = typeof globalThis !== 'undefined'
+    ? globalThis.__IPAW_BACKEND_URL__
+    : undefined;
+  const configured = runtime || (import.meta.env.VITE_IPAW_BACKEND_URL as string | undefined) || IPAW_BACKEND_URL;
+  return configured.trim().replace(/\/$/, '');
+}
+
+/**
+ * Check the dedicated Netlify backend without exposing any TrakCare details
+ * to the browser. This is intentionally separate from the Replit API health
+ * check because the GAS-hosted bundle only knows the Netlify URL.
+ */
+export async function checkBackendConnection(timeoutMs = 8_000): Promise<boolean> {
+  try {
+    await ipawApi<{ service?: string; status?: string }>('/api/health', {
+      method: 'GET',
+      timeoutMs,
+      debugLabel: 'health',
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeForLog(value: unknown, key = ''): unknown {

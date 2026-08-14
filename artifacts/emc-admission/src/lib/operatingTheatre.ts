@@ -1,7 +1,14 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { apiUrl, getApiBaseUrl, getOfflineOperatingTheatreProxyBase, hasApiProxy } from './apiConfig';
+import {
+  apiUrl,
+  getApiBaseUrl,
+  getOfflineOperatingTheatreProxyBase,
+  hasApiProxy,
+  ipawApi,
+  isGasHosted,
+} from './apiConfig';
 import {
   getDB,
   OperatingTheatreCache,
@@ -22,9 +29,9 @@ export type { OperatingTheatreInProgressPatient } from './db';
 export type { OperatingTheatrePreadmissionCache } from './db';
 
 export const DEFAULT_OPERATING_THEATRE_ENDPOINT =
-  'https://apps.emc.id/trakcare/operatingtheatre/otrequest/dashboard/trakcareANLT/hospital/4';
+  '/trakcare/operatingtheatre/otrequest/dashboard/trakcareANLT/hospital/4';
 export const DEFAULT_OPERATING_THEATRE_IN_PROGRESS_ENDPOINT =
-  'https://apps.emc.id/trakcare/operatingtheatre/otrequest/status/list/hospital/4?status=inprogress';
+  '/trakcare/operatingtheatre/otrequest/status/list/hospital/4?status=inprogress';
 
 export type OperatingTheatreRefreshInterval = 'manual' | '30' | '60' | '120';
 
@@ -437,6 +444,39 @@ async function fetchOperatingTheatreViaProxy(
   forceLogin: boolean,
   view: 'dashboard' | 'inprogress',
 ): Promise<OperatingTheatrePatient[] | OperatingTheatreInProgressPatient[]> {
+  if (isGasHosted()) {
+    const body = await ipawApi<{
+      patients?: OperatingTheatrePatient[] | OperatingTheatreInProgressPatient[];
+      html?: string;
+      contentType?: string;
+      baseUrl?: string;
+    }>('/api/trakcare/operating-theatre', {
+      method: 'POST',
+      body: {
+        endpoint: DEFAULT_OPERATING_THEATRE_ENDPOINT,
+        username: config.username,
+        password: config.password,
+        clientId: getClientId(),
+        forceLogin,
+        ...(view === 'inprogress' ? { view } : {}),
+      },
+      debugLabel: `trakcare/operating-theatre/${view}`,
+    });
+    if (Array.isArray(body?.patients)) {
+      return body.patients;
+    }
+    if (typeof body?.html === 'string') {
+      return view === 'inprogress'
+        ? parseOperatingTheatreInProgressResponse(body.html, body.contentType || 'text/html')
+        : parseOperatingTheatreResponse(
+            body.html,
+            body.contentType || 'text/html',
+            body.baseUrl || DEFAULT_OPERATING_THEATRE_ENDPOINT,
+          );
+    }
+    return [];
+  }
+
   const proxyBase = getOfflineOperatingTheatreProxyBase() || getApiBaseUrl();
   const response = await fetch(`${proxyBase}/api/trakcare/operating-theatre`, {
     method: 'POST',
@@ -543,6 +583,7 @@ export async function fetchOperatingTheatre(config: OperatingTheatreConfig, forc
   // deployment because it does not expose the Operating Theatre route.
   const canUseProxy =
     getOfflineOperatingTheatreProxyBase() !== '' ||
+    isGasHosted() ||
     (!isOfflineFileMode() && (hasApiProxy() || getApiBaseUrl() !== ''));
   if (canUseProxy) {
     try {
@@ -561,6 +602,7 @@ export async function fetchOperatingTheatreInProgress(
 ): Promise<OperatingTheatreInProgressPatient[]> {
   const canUseProxy =
     getOfflineOperatingTheatreProxyBase() !== '' ||
+    isGasHosted() ||
     (!isOfflineFileMode() && (hasApiProxy() || getApiBaseUrl() !== ''));
   if (canUseProxy) {
     try {

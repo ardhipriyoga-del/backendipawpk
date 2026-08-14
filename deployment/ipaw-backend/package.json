@@ -1,0 +1,10 @@
+{
+  "name": "ipaw-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Netlify Functions backend for IPAW v3",
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "commonjs"
+}

@@ -1,0 +1,391 @@
+Buatkan arsitektur deployment untuk aplikasi IPAW v3 dengan pemisahan FRONTEND dan BACKEND sebagai berikut:
+
+TUJUAN
+
+Saya ingin:
+
+1. FRONTEND IPAW tetap berupa file HTML dan dapat dijalankan/deploy sebagai Google Apps Script Web App (GAS).
+2. BACKEND dibuat menggunakan Netlify Functions dan dideploy ke Netlify.
+3. Semua request/fetch ke URL TrakCare dilakukan oleh BACKEND Netlify, bukan langsung dari browser/frontend.
+4. Frontend GAS hanya berkomunikasi dengan Backend Netlify melalui HTTPS API.
+5. Jangan mengubah UI dan fitur IPAW yang sudah ada kecuali diperlukan untuk mengganti mekanisme fetch.
+6. Jangan menghapus fitur yang sudah berjalan.
+
+Arsitektur:
+
+Browser
+↓
+Google Apps Script Web App
+↓ HTTPS fetch
+Netlify Backend API
+↓ server-side fetch
+TrakCare
+
+BAGIAN 1 — FRONTEND GAS
+
+Gunakan file IPAW v3 yang sudah ada sebagai frontend.
+
+Buat agar HTML dapat digunakan sebagai Google Apps Script Web App.
+
+Struktur GAS:
+
+Code.gs
+ipawv3.html
+
+Code.gs harus menyediakan:
+
+doGet(e)
+
+yang menampilkan ipawv3.html.
+
+Contoh konsep:
+
+function doGet(e) {
+return HtmlService
+.createHtmlOutputFromFile(‘ipawv3’)
+.setTitle(‘IPAW’);
+}
+
+Jangan memindahkan logic aplikasi yang sudah ada ke Code.gs.
+
+Logic UI, IndexedDB, local storage, event handler, tabel, dashboard, dan fitur IPAW tetap berada di ipawv3.html.
+
+BAGIAN 2 — API CONFIG FRONTEND
+
+Di ipawv3.html buat satu konfigurasi terpusat:
+
+const IPAW_BACKEND_URL = ‘https://DOMAIN-NETLIFY-SAYA.netlify.app’;
+
+Jangan menyebarkan URL backend di banyak tempat.
+
+Semua komunikasi frontend ke backend harus menggunakan konfigurasi tersebut.
+
+BAGIAN 3 — FUNGSI API FRONTEND
+
+Buat helper:
+
+async function ipawApi(endpoint, options = {})
+
+Fungsinya:
+
+* melakukan fetch ke Netlify Backend
+* menggunakan JSON
+* menangani GET
+* menangani POST
+* menangani PUT
+* menangani PATCH
+* menangani DELETE
+* menangani HTTP error
+* menangani timeout
+* menangani response JSON
+* memberikan error yang mudah dibaca user/developer
+
+Contoh penggunaan:
+
+const result = await ipawApi(’/api/trakcare’, {
+method: ‘POST’,
+body: {
+endpoint: ‘/URL-ENDPOINT-TRAKCARE’,
+method: ‘GET’
+}
+});
+
+Jangan menggunakan fetch langsung dari frontend ke server TrakCare.
+
+DILARANG:
+
+fetch(‘https://URL-TRAKCARE/…’)
+
+Yang diperbolehkan:
+
+fetch(${IPAW_BACKEND_URL}/api/trakcare, …)
+
+BAGIAN 4 — BACKEND NETLIFY
+
+Buat struktur project:
+
+ipaw-backend/
+├── netlify.toml
+├── package.json
+└── netlify/
+└── functions/
+└── api.js
+
+Backend menggunakan Netlify Functions.
+
+Endpoint utama:
+
+/api/trakcare
+
+Backend menerima request dari frontend.
+
+Contoh request:
+
+POST /api/trakcare
+
+Body:
+
+{
+“endpoint”: “/patient”,
+“method”: “GET”,
+“payload”: null
+}
+
+Backend kemudian membentuk URL:
+
+TRAKCARE_BASE_URL + endpoint
+
+Kemudian backend melakukan fetch SERVER-SIDE ke TrakCare.
+
+Contoh:
+
+const response = await fetch(
+${TRAKCARE_BASE_URL}${endpoint}
+);
+
+Frontend TIDAK PERNAH mengetahui token rahasia TrakCare.
+
+BAGIAN 5 — ENVIRONMENT VARIABLES
+
+Gunakan Environment Variables Netlify.
+
+Minimal:
+
+TRAKCARE_BASE_URL
+
+Jika TrakCare membutuhkan authentication, gunakan:
+
+TRAKCARE_TOKEN
+
+Opsional untuk mengamankan backend:
+
+IPAW_API_KEY
+
+Jangan pernah menaruh:
+
+TRAKCARE_TOKEN
+API secret
+password
+credential
+
+di ipawv3.html.
+
+Jangan hardcode secret ke source code.
+
+BAGIAN 6 — CORS
+
+Backend Netlify harus menangani CORS.
+
+Izinkan request dari Google Apps Script frontend.
+
+Untuk tahap pengembangan boleh:
+
+Access-Control-Allow-Origin: *
+
+Tetapi buat struktur kode sehingga nanti mudah diubah menjadi domain tertentu.
+
+Tangani:
+
+OPTIONS
+GET
+POST
+PUT
+PATCH
+DELETE
+
+BAGIAN 7 — ERROR HANDLING
+
+Backend harus membedakan error:
+
+1. Backend tidak bisa terhubung ke TrakCare
+2. TrakCare mengembalikan HTTP 400
+3. TrakCare mengembalikan HTTP 401
+4. TrakCare mengembalikan HTTP 403
+5. TrakCare mengembalikan HTTP 404
+6. TrakCare mengembalikan HTTP 500
+7. Timeout
+8. Response bukan JSON
+
+Response backend harus konsisten.
+
+Contoh sukses:
+
+{
+“success”: true,
+“status”: 200,
+“data”: {}
+}
+
+Contoh error:
+
+{
+“success”: false,
+“status”: 502,
+“error”: “Gagal terhubung ke TrakCare”
+}
+
+BAGIAN 8 — HEALTH CHECK
+
+Buat endpoint:
+
+/api/health
+
+Contoh:
+
+GET /api/health
+
+Response:
+
+{
+“success”: true,
+“service”: “IPAW Backend”,
+“status”: “online”
+}
+
+Frontend IPAW dapat menggunakan endpoint ini untuk mengecek koneksi backend.
+
+Tambahkan fungsi:
+
+async function checkBackendConnection()
+
+yang mengembalikan status online/offline.
+
+BAGIAN 9 — MIGRASI FETCH IPAW
+
+Analisis seluruh ipawv3.html.
+
+Cari semua:
+
+fetch(…)
+XMLHttpRequest
+request ke URL TrakCare
+request API yang berhubungan dengan TrakCare
+
+Kemudian migrasikan request TrakCare agar melalui:
+
+ipawApi()
+
+JANGAN mengubah logic bisnis aplikasi.
+
+JANGAN mengubah struktur database IndexedDB.
+
+JANGAN menghapus fitur existing.
+
+JANGAN mengubah UI kecuali diperlukan untuk menampilkan status/error koneksi.
+
+Tujuannya hanya:
+
+Browser
+↓
+Netlify API
+↓
+TrakCare
+
+BAGIAN 10 — KONFIGURASI TRAKCARE
+
+Jangan hardcode URL TrakCare di frontend.
+
+Frontend hanya mengetahui:
+
+IPAW_BACKEND_URL
+
+Backend mengetahui:
+
+TRAKCARE_BASE_URL
+
+Sehingga jika URL TrakCare berubah, cukup mengubah Environment Variable Netlify.
+
+BAGIAN 11 — FILE YANG HARUS DIHASILKAN
+
+Saya ingin hasil akhir berupa:
+
+FRONTEND
+
+ipawv3.html
+Code.gs
+
+Siap digunakan sebagai Google Apps Script Web App.
+
+BACKEND
+
+netlify.toml
+package.json
+netlify/functions/api.js
+
+Siap deploy ke Netlify.
+
+Buat juga:
+
+README.md
+
+yang menjelaskan:
+
+1. Cara membuat project Google Apps Script
+2. Cara memasukkan ipawv3.html
+3. Cara memasukkan Code.gs
+4. Cara deploy GAS sebagai Web App
+5. Cara membuat project Netlify
+6. Cara upload backend
+7. Cara setting Environment Variables
+8. Cara deploy Netlify
+9. Cara mengisi IPAW_BACKEND_URL
+10. Cara mengisi TRAKCARE_BASE_URL
+11. Cara testing /api/health
+12. Cara testing /api/trakcare
+13. Cara troubleshooting CORS
+14. Cara troubleshooting koneksi TrakCare
+
+BAGIAN 12 — PENTING
+
+Jangan membuat server Express yang membutuhkan server VPS.
+
+Gunakan Netlify Functions.
+
+Jangan membuat backend berjalan di browser.
+
+Jangan memasukkan credential TrakCare ke HTML.
+
+Jangan melakukan fetch langsung dari browser ke TrakCare.
+
+Jangan menghapus kode IPAW existing.
+
+Jangan melakukan refactor besar-besaran terhadap UI.
+
+Pertahankan seluruh fitur IPAW yang sudah ada.
+
+Jika menemukan fetch TrakCare yang belum jelas endpoint atau payload-nya, JANGAN mengarang endpoint baru. Pertahankan endpoint dan payload existing lalu hanya ubah jalur request-nya melalui backend.
+
+OUTPUT YANG SAYA INGINKAN
+
+Setelah selesai:
+
+1. Tampilkan struktur folder final.
+2. Berikan isi lengkap Code.gs.
+3. Berikan isi lengkap backend Netlify.
+4. Tunjukkan perubahan yang dilakukan pada ipawv3.html.
+5. Pastikan tidak ada fetch langsung dari frontend ke TrakCare.
+6. Berikan langkah deploy GAS.
+7. Berikan langkah deploy Netlify.
+8. Berikan daftar Environment Variables.
+9. Berikan cara test backend.
+10. Berikan cara test dari IPAW.
+
+Prioritas utama:
+
+IPAW v3 tetap berfungsi seperti sekarang.
+
+Yang berubah hanya arsitektur komunikasi:
+
+SEBELUM:
+
+IPAW Browser
+↓
+TrakCare
+
+SESUDAH:
+
+IPAW Browser / GAS
+↓
+Netlify Backend
+↓
+TrakCare

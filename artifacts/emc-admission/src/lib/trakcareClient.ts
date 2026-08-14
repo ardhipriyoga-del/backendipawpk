@@ -2,9 +2,11 @@
  * Smart TrakCare fetch client.
  *
  * Automatically switches strategy based on runtime context:
- *  - file:// (offline standalone HTML)  → fetch TrakCare directly (CORS bypassed by bat file)
+ *  - file:// (offline standalone HTML)  → fetch TrakCare directly only for
+ *    legacy local launchers (CORS bypassed by bat file)
  *  - http:// dengan API proxy tersedia  → backend proxy di /api/trakcare/...
  *    URL proxy ditentukan oleh VITE_API_BASE_URL (absolut) atau relative jika local dev.
+ *  - Google Apps Script                        → Netlify /api/trakcare
  *
  * Import dari sini, bukan panggil fetch('/api/trakcare/...') langsung.
  */
@@ -17,17 +19,17 @@ import {
   RawInpatientPatient,
   RawIGDPatient,
 } from './trakcareParser';
-import { apiRequest, apiUrl, hasApiProxy, hasTrakCareProxy, isGasHosted } from './apiConfig';
+import { apiRequest, apiUrl, hasApiProxy, hasTrakCareProxy, ipawApi, isGasHosted } from './apiConfig';
 import { normalizeTrakCareBirthDate } from './trakcareDate';
 
 // ── Default endpoint URLs ─────────────────────────────────────────────────────
 
 export const DEFAULT_EP = {
-  inpatient:        'https://apps.emc.id/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4',
-  igd:              'https://apps.emc.id/trakcare/dashboard/dailyemergencywaitingtime/trakcareANLT/hospital/4',
-  medicalDischarge: 'https://apps.emc.id/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?medical=Y',
-  nurseDischarge:   'https://apps.emc.id/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?nurse=Y',
-  pharmacyDischarge:'https://apps.emc.id/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?pharmacy=Y',
+  inpatient:        '/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4',
+  igd:              '/trakcare/dashboard/dailyemergencywaitingtime/trakcareANLT/hospital/4',
+  medicalDischarge: '/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?medical=Y',
+  nurseDischarge:   '/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?nurse=Y',
+  pharmacyDischarge:'/trakcare/dashboard/dailyinpatient/trakcareANLT/hospital/4?pharmacy=Y',
 };
 
 // ── Offline detection ─────────────────────────────────────────────────────────
@@ -80,17 +82,13 @@ export async function fetchTrakCareViaGas(
   endpoint: string,
   targetUrl: string,
 ): Promise<GasTrakCareResponse> {
-  const result = await apiRequest<GasTrakCareResponse>(
-    `?action=trakcare&kind=${encodeURIComponent(endpoint)}&url=${encodeURIComponent(targetUrl)}&apiKey=IPAW-EMC`,
-    {
-      method: 'GET',
-      cache: 'no-store',
-      debugLabel: `trakcare/${endpoint}`,
-    },
-  );
-  const payload = result.data;
-  if (!payload?.success || typeof payload.body !== 'string') {
-    throw new Error(payload?.body || `TrakCare ${endpoint} tidak mengembalikan data.`);
+  const payload = await ipawApi<GasTrakCareResponse>('/api/trakcare', {
+    method: 'POST',
+    body: { endpoint: targetUrl, method: 'GET' },
+    debugLabel: `trakcare/${endpoint}`,
+  });
+  if (!payload || typeof payload.body !== 'string') {
+    throw new Error(`TrakCare ${endpoint} tidak mengembalikan data.`);
   }
   return payload;
 }
@@ -174,7 +172,7 @@ async function fetchViaProxy(endpoint: string, targetUrl: string): Promise<Respo
 }
 
 const EPISODE_DETAIL_BASE =
-  'https://apps.emc.id/trakcare/dokumen/print/dokumen/trakcareANLT?episode=';
+  '/trakcare/dokumen/print/dokumen/trakcareANLT?episode=';
 
 function parseEpisodeBirthDate(html: string): string {
   if (typeof DOMParser === 'undefined') return '';
