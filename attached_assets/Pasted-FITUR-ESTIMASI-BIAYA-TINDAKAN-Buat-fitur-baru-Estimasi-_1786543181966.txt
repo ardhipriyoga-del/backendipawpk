@@ -1,0 +1,128 @@
+FITUR: ESTIMASI BIAYA TINDAKAN
+
+Buat fitur baru Estimasi Biaya Tindakan di IPAW v2.
+
+Tujuan utama: user membuat estimasi biaya berdasarkan Master Tarif yang sudah di-upload ke IPAW, lalu hasilnya dicetak/diberikan kepada keluarga atau penjamin untuk konfirmasi sebelum tindakan.
+
+Fitur ini terpisah dari Buat CP. Jangan gabungkan workflow atau datanya.
+
+ALUR
+
+1. Pilih Pasien
+
+* Sumber: Rawat Inap / IGD
+* Cari pasien berdasarkan Nama / No. RM / Episode
+* Gunakan data pasien yang sudah ada di IPAW.
+
+2. Pilih Kelas Tarif
+Gunakan kelas tarif yang tersedia pada Master Tarif.
+
+3. Cari Tarif
+User mencari item dari Master Tarif berdasarkan:
+
+* Nama tindakan
+* Kode tarif
+* Keyword
+
+Tampilkan:
+
+* Kode
+* Nama tindakan
+* Kategori
+* Tarif
+
+User klik Tambah.
+
+4. Buat Estimasi
+Tampilkan daftar:
+Tindakan | Qty | Tarif | Subtotal
+
+* Qty default 1
+* Qty bisa diedit
+* Total otomatis dihitung
+* User bisa tambah/hapus item
+* Tarif selalu mengambil dari Master Tarif
+* Jangan hardcode tarif.
+
+Tampilkan besar:
+TOTAL ESTIMASI
+
+5. Catatan
+Sediakan catatan opsional untuk keterangan tindakan/informasi tambahan.
+
+6. Simpan
+Simpan estimasi sebagai data terpisah agar bisa dibuka kembali dan dicetak.
+
+Penting: simpan snapshot nama item, tarif, qty, subtotal dan total, sehingga perubahan Master Tarif di kemudian hari tidak mengubah estimasi lama.
+
+7. Cetak
+Buat tombol Cetak Estimasi dengan dokumen sederhana dan profesional:
+
+ESTIMASI BIAYA TINDAKAN
+
+Identitas:
+
+* Nama Pasien
+* No. RM
+* Episode
+* Ruangan
+* Penjamin
+* Kelas Tarif
+
+Rincian:
+
+* Tindakan
+* Qty
+* Tarif
+* Subtotal
+
+TOTAL ESTIMASI BIAYA
+
+Tambahkan keterangan:
+
+Estimasi biaya merupakan perkiraan berdasarkan Master Tarif yang berlaku dan bukan merupakan tagihan akhir. Biaya aktual dapat berubah sesuai tindakan dan layanan yang diberikan.
+
+Bagian bawah:
+
+KONFIRMASI KELUARGA / PENJAMIN
+
+☐ MENYETUJUI
+☐ TIDAK MENYETUJUI
+
+Nama: __________________
+Hubungan: ______________
+Tanggal: _______________
+Tanda Tangan: __________
+
+RIWAYAT
+
+Sediakan daftar estimasi yang pernah dibuat:
+
+* Tanggal
+* Pasien
+* Total
+* Status
+* Dibuat oleh
+
+Aksi:
+Lihat | Cetak
+
+Status sederhana:
+
+* Menunggu Konfirmasi
+* Disetujui
+* Tidak Disetujui
+
+ATURAN
+
+* Gunakan Master Tarif existing sebagai sumber harga.
+* Gunakan data pasien existing.
+* Jangan mengubah Master Tarif.
+* Jangan mengubah Buat CP.
+* Jangan membuat billing baru.
+* Gunakan storage/helper existing IPAW jika tersedia.
+* Jika IPAW menggunakan IndexedDB, buat store khusus estimasi_biaya_tindakan.
+* Jangan membuat API/endpoint baru jika tidak diperlukan.
+* Ikuti UI IPAW v2.
+
+Intinya: fitur ini adalah alat untuk membuat lembar estimasi biaya dari Master Tarif agar keluarga/penjamin dapat mengetahui perkiraan biaya dan memberikan konfirmasi sebelum tindakan.

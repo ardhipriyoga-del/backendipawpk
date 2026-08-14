@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/ip-admission/"
+title = "IP Admission Workspace"
+description = "A hospital admission operations workspace for monitoring inpatient patients, KTM and IGD status, billing, handovers, cloud backup, and offline use."
+version = "1.0.0"
+id = "artifacts/ip-admission"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/ip-admission/" ]
+localPort = 21771
+
+[services.development]
+run = "pnpm --filter @workspace/ip-admission run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ip-admission", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ip-admission/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21771"
+BASE_PATH = "/ip-admission/"

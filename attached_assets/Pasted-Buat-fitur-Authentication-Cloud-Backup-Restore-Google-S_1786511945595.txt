@@ -1,0 +1,563 @@
+Buat fitur Authentication + Cloud Backup/Restore Google Spreadsheet untuk aplikasi existing ipawv2.html.
+
+TUJUAN
+
+Saya memiliki aplikasi ipawv2.html yang saat ini menggunakan penyimpanan lokal/IndexedDB.
+
+Saya ingin menambahkan sistem:
+
+Login → Verifikasi akun dari Google Spreadsheet → Restore data → CRUD → Auto Sync/Backup ke Google Spreadsheet
+
+Jangan merusak fitur, UI, struktur data, dan fungsi existing IPAW v2.
+
+⸻
+
+ARSITEKTUR
+
+Gunakan arsitektur:
+
+ipawv2.html
+↓
+Backend API
+↓
+Google Spreadsheet
+
+Backend dijalankan melalui Replit.
+
+JANGAN mengakses Google Spreadsheet secara langsung dari browser.
+
+Credential Google/API/service account harus disimpan sebagai environment variables / Secrets di Replit, bukan di HTML atau JavaScript frontend.
+
+⸻
+
+1. LOGIN
+
+Buat endpoint:
+
+POST /api/auth/login
+
+Request:
+
+{
+  "username": "username",
+  "password": "password"
+}
+
+Backend membaca sheet Users.
+
+Contoh struktur:
+
+id	username	password	nama	role	status
+1	admin	xxx	Administrator	superuser	active
+2	user01	xxx	User 01	officer	active
+
+Jika username dan password sesuai dan status active:
+
+Return:
+
+{
+  "success": true,
+  "user": {
+    "id": "1",
+    "username": "admin",
+    "nama": "Administrator",
+    "role": "superuser"
+  }
+}
+
+Jika salah:
+
+{
+  "success": false,
+  "message": "Username atau password salah"
+}
+
+Jangan memberikan informasi apakah username atau password yang salah secara terpisah.
+
+Jika memungkinkan, gunakan password hashing. Jangan menyimpan password plaintext pada implementasi production.
+
+⸻
+
+2. SESSION
+
+Setelah login berhasil, buat session/token yang aman.
+
+Frontend tidak boleh menganggap login berhasil hanya berdasarkan localStorage.
+
+Setiap request API harus diverifikasi oleh backend.
+
+Sediakan:
+
+POST /api/auth/logout
+
+dan:
+
+GET /api/auth/me
+
+⸻
+
+3. RESTORE DATA OTOMATIS
+
+Setelah login berhasil:
+
+ipawv2.html harus otomatis memanggil:
+
+GET /api/data/restore
+
+Backend mengambil seluruh data IPAW dari Google Spreadsheet.
+
+Data yang dikembalikan harus mencakup seluruh data yang diperlukan aplikasi, misalnya:
+
+* pasien
+* operan
+* pending operan
+* checklist
+* billing
+* master tarif
+* konfigurasi
+* activity log
+* data user/workspace
+* dan seluruh collection/store IndexedDB existing
+
+JANGAN membuat struktur data baru jika struktur IndexedDB existing sudah tersedia.
+
+Backend harus menyesuaikan dengan struktur data IPAW v2 yang sekarang.
+
+⸻
+
+4. RESTORE KE INDEXEDDB
+
+Setelah response /api/data/restore diterima:
+
+1. Validasi data.
+2. Backup data lokal lama terlebih dahulu.
+3. Clear/replace data IndexedDB sesuai kebutuhan.
+4. Import data dari server.
+5. Pastikan seluruh object store existing tetap kompatibel.
+6. Setelah restore selesai, tampilkan status:
+
+Data berhasil disinkronkan
+
+Jika restore gagal, jangan menghapus data lokal existing.
+
+⸻
+
+5. CRUD AUTO BACKUP
+
+Saya ingin setiap operasi CRUD IPAW dapat tersinkron ke server.
+
+Buat API:
+
+POST /api/data/create
+
+PUT /api/data/update
+
+DELETE /api/data/delete
+
+Request minimal:
+
+{
+  "store": "nama_object_store",
+  "id": "record-id",
+  "data": {}
+}
+
+Setiap kali user melakukan:
+
+* Create
+* Update
+* Delete
+
+maka:
+
+1. Update IndexedDB terlebih dahulu.
+2. Tandai perubahan sebagai pendingSync.
+3. Kirim perubahan ke backend.
+4. Backend menyimpan perubahan ke Google Spreadsheet.
+5. Jika berhasil → tandai synced.
+6. Jika gagal → tetap simpan lokal dan masukkan ke sync queue.
+
+⸻
+
+6. OFFLINE-FIRST
+
+IPAW tetap harus bisa digunakan ketika koneksi internet/server tidak tersedia.
+
+Jika server tidak tersedia:
+
+User CRUD
+↓
+IndexedDB
+↓
+Sync Queue
+↓
+Menunggu koneksi
+↓
+Auto Sync
+
+Ketika koneksi kembali:
+
+POST /api/sync
+
+untuk mengirim semua perubahan yang masih pending.
+
+Jangan sampai kegagalan internet menyebabkan data lokal hilang.
+
+⸻
+
+7. SYNC QUEUE
+
+Buat sistem:
+
+sync_queue
+
+dengan informasi minimal:
+
+id
+operation
+store
+recordId
+payload
+createdAt
+status
+retryCount
+lastError
+
+Contoh:
+
+{
+  "operation": "update",
+  "store": "patients",
+  "recordId": "RM001",
+  "payload": {},
+  "status": "pending"
+}
+
+Gunakan retry otomatis.
+
+Jangan membuat infinite loop.
+
+⸻
+
+8. AUTO SYNC
+
+Tambahkan auto-sync setiap beberapa waktu, misalnya:
+
+30–60 detik
+
+Tetapi jangan melakukan request jika tidak ada perubahan.
+
+Tambahkan juga tombol:
+
+Sync Sekarang
+
+Status UI:
+
+* 🟢 Tersinkron
+* 🟡 Menunggu sinkronisasi
+* 🔵 Sedang sinkronisasi
+* 🔴 Gagal sinkronisasi
+* ⚫ Offline
+
+⸻
+
+9. GOOGLE SPREADSHEET STRUCTURE
+
+Jangan menggunakan satu sheet besar untuk semua data jika itu membuat performa buruk.
+
+Buat struktur yang mudah dikelola.
+
+Contoh:
+
+Users
+
+Patients
+
+Operan
+
+Billing
+
+Checklist
+
+MasterTarif
+
+ActivityLog
+
+SyncLog
+
+Jika IPAW v2 mempunyai object store lain, buat mapping otomatis.
+
+Tambahkan kolom:
+
+updatedAt
+
+updatedBy
+
+recordId
+
+deleted
+
+version
+
+untuk kebutuhan sinkronisasi.
+
+⸻
+
+10. SOFT DELETE
+
+Jangan langsung menghapus record penting dari Spreadsheet.
+
+Untuk delete, gunakan:
+
+deleted = true
+
+Sehingga data masih dapat dipulihkan jika diperlukan.
+
+Restore hanya mengambil data yang masih aktif, kecuali diperlukan untuk sinkronisasi.
+
+⸻
+
+11. CONFLICT HANDLING
+
+Buat mekanisme conflict sederhana.
+
+Setiap record mempunyai:
+
+updatedAt
+version
+updatedBy
+
+Jika ada perubahan dari dua perangkat/user:
+
+* bandingkan updatedAt
+* gunakan versi terbaru sebagai default
+* catat conflict pada SyncLog
+
+Jangan sampai data otomatis hilang karena conflict.
+
+⸻
+
+12. INITIAL SYNC
+
+Saat user pertama kali login pada perangkat baru:
+
+Login
+↓
+Auth berhasil
+↓
+GET /api/data/restore
+↓
+Restore seluruh data
+↓
+Masukkan ke IndexedDB
+↓
+IPAW siap digunakan
+
+Jika IndexedDB sudah mempunyai data lokal, jangan langsung overwrite tanpa validasi.
+
+Tampilkan proses:
+
+Mengambil data cloud...
+
+Memulihkan data lokal...
+
+Sinkronisasi selesai
+
+⸻
+
+13. DATA SECURITY
+
+WAJIB:
+
+* Google credential hanya di Replit Secrets.
+* Jangan expose service-account credential ke frontend.
+* Jangan memasukkan API key Google ke ipawv2.html.
+* Jangan menyimpan password user secara plaintext jika bisa menggunakan hashing.
+* Validasi semua request di backend.
+* User hanya boleh membaca/mengubah data yang memang menjadi haknya.
+* Jangan percaya role, userId, atau username yang dikirim dari frontend.
+* Ambil identitas user dari session/token backend.
+* Tambahkan rate limit pada login.
+* Jangan log password atau credential.
+
+⸻
+
+14. JANGAN MERUSAK IPAW V2
+
+Ini sangat penting.
+
+Sebelum melakukan perubahan:
+
+1. Analisis ipawv2.html.
+2. Identifikasi seluruh IndexedDB database/object store.
+3. Identifikasi seluruh fungsi CRUD.
+4. Identifikasi struktur data.
+5. Identifikasi fungsi login existing jika ada.
+6. Identifikasi seluruh modul yang menggunakan IndexedDB.
+
+Kemudian integrasikan sistem cloud sync tanpa menghapus fungsi existing.
+
+Jangan melakukan rewrite total terhadap ipawv2.html jika tidak diperlukan.
+
+Pertahankan UI existing.
+
+⸻
+
+15. BACKEND
+
+Buat backend yang kompatibel dengan Replit.
+
+Struktur kira-kira:
+
+/
+├── ipawv2.html
+├── server/
+│   ├── server.js
+│   ├── auth.js
+│   ├── spreadsheet.js
+│   ├── sync.js
+│   └── routes/
+│       ├── auth.js
+│       ├── data.js
+│       └── sync.js
+├── package.json
+└── README.md
+
+Jika framework/backend existing sudah tersedia, gunakan struktur existing daripada membuat ulang.
+
+⸻
+
+16. GOOGLE SHEETS API
+
+Gunakan Google Sheets API melalui backend.
+
+Credential Google harus menggunakan Replit Secrets.
+
+Buat konfigurasi:
+
+GOOGLE_SERVICE_ACCOUNT_EMAIL
+GOOGLE_PRIVATE_KEY
+GOOGLE_SHEET_ID
+
+Jangan pernah menulis nilai sebenarnya ke source code.
+
+⸻
+
+17. API HEALTH CHECK
+
+Buat:
+
+GET /api/health
+
+Response:
+
+{
+  "success": true,
+  "server": "online",
+  "timestamp": "..."
+}
+
+Frontend menggunakan endpoint ini untuk mengetahui status backend.
+
+⸻
+
+18. DASHBOARD STATUS
+
+Tambahkan indikator kecil di IPAW:
+
+☁ Cloud Sync: Connected
+Last Sync: 12:32:15
+Pending: 0
+
+Jika ada perubahan belum tersinkron:
+
+☁ Cloud Sync: Pending
+Pending: 3
+
+⸻
+
+19. ERROR HANDLING
+
+Jika Google Spreadsheet gagal:
+
+JANGAN menghapus data lokal.
+
+Contoh:
+
+Google Spreadsheet tidak dapat diakses.
+Data tetap tersimpan secara lokal.
+3 perubahan menunggu sinkronisasi.
+
+Ketika server kembali normal, lakukan sync otomatis.
+
+⸻
+
+20. DELIVERABLE
+
+Setelah selesai, berikan:
+
+1. Struktur project final.
+2. Backend lengkap.
+3. Perubahan ipawv2.html.
+4. File package.json.
+5. .env.example.
+6. Panduan membuat Google Spreadsheet.
+7. Panduan membuat Google Service Account.
+8. Panduan memasukkan Secrets ke Replit.
+9. Panduan menjalankan project di Replit.
+10. Panduan testing login.
+11. Panduan testing restore.
+12. Panduan testing CRUD + sync.
+13. Panduan testing offline → online.
+14. Dokumentasi struktur sheet.
+15. Dokumentasi API endpoint.
+
+⸻
+
+TEST WAJIB
+
+Buat test scenario:
+
+TEST 1
+
+Login username/password benar → berhasil.
+
+TEST 2
+
+Login salah → ditolak.
+
+TEST 3
+
+Login → seluruh data Spreadsheet masuk ke IndexedDB.
+
+TEST 4
+
+Create data → IndexedDB berubah → Spreadsheet berubah.
+
+TEST 5
+
+Update data → IndexedDB berubah → Spreadsheet berubah.
+
+TEST 6
+
+Delete data → soft delete → Spreadsheet mencatat deleted=true.
+
+TEST 7
+
+Internet mati → CRUD tetap berjalan.
+
+TEST 8
+
+Internet kembali → pending queue otomatis terkirim.
+
+TEST 9
+
+Refresh browser → session tetap valid sesuai mekanisme authentication.
+
+TEST 10
+
+Login menggunakan perangkat/browser lain → data yang sama dapat direstore dari Spreadsheet.
+
+Sebelum coding, tampilkan terlebih dahulu hasil analisis terhadap ipawv2.html, khususnya database IndexedDB, object store, struktur data, dan fungsi CRUD. Setelah itu baru implementasikan integrasi.
+
+Jangan mengubah fitur IPAW yang tidak berhubungan dengan sistem authentication dan cloud synchronization.

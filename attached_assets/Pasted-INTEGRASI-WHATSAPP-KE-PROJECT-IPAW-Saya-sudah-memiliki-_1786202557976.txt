@@ -1,0 +1,630 @@
+INTEGRASI WHATSAPP KE PROJECT IPAW
+
+Saya sudah memiliki project IPAW yang saat ini sudah berjalan di Replit.
+
+Tugas Anda adalah MENAMBAHKAN fitur WhatsApp Gateway ke project yang sudah ada menggunakan Baileys + REST API, dengan konsep:
+
+IPAW HTML
+→ Backend IPAW
+→ Baileys
+→ WhatsApp
+
+ATURAN PALING PENTING
+
+1. JANGAN menghapus fitur IPAW yang sudah ada.
+2. JANGAN mengubah database existing.
+3. JANGAN mengubah struktur Google Spreadsheet existing.
+4. JANGAN mengubah alur realtime existing.
+5. JANGAN mengubah UI existing kecuali menambahkan elemen WhatsApp yang diperlukan.
+6. JANGAN mengganti framework existing.
+7. JANGAN melakukan refactor besar terhadap project.
+8. Jangan membuat project baru.
+9. Gunakan struktur dan teknologi backend yang SUDAH digunakan project IPAW.
+10. Sebelum melakukan perubahan, periksa seluruh struktur project terlebih dahulu.
+11. Pertahankan seluruh fungsi existing agar setelah integrasi WhatsApp project tetap berjalan seperti sebelumnya.
+
+⸻
+
+TUJUAN
+
+Saya ingin IPAW dapat mengirim WhatsApp tanpa membuka WhatsApp Web secara manual.
+
+Konsep penggunaan:
+
+1. Admin membuka menu Pengaturan WhatsApp.
+2. IPAW menampilkan status koneksi WhatsApp.
+3. Jika belum terhubung, tampilkan QR Code.
+4. User melakukan scan QR menggunakan WhatsApp.
+5. Setelah berhasil scan, session WhatsApp disimpan secara persistent.
+6. Setelah itu user TIDAK perlu scan QR lagi setiap kali Replit restart, selama session masih valid.
+7. IPAW dapat mengirim pesan WhatsApp melalui tombol “Kirim WhatsApp”.
+8. Pengiriman dilakukan melalui backend, bukan langsung dari browser.
+9. API credential/session WhatsApp tidak boleh dikirim ke frontend.
+
+⸻
+
+ARSITEKTUR
+
+Buat modul terpisah:
+
+IPAW Frontend
+|
+| POST /api/whatsapp/send
+↓
+IPAW Backend
+|
+↓
+Baileys
+|
+↓
+WhatsApp
+
+Frontend tidak boleh berkomunikasi langsung dengan Baileys.
+
+⸻
+
+FITUR WHATSAPP
+
+Buat modul:
+
+/api/whatsapp/
+
+Minimal endpoint:
+
+GET  /api/whatsapp/status
+GET  /api/whatsapp/qr
+POST /api/whatsapp/send
+POST /api/whatsapp/logout
+
+Jika diperlukan, tambahkan:
+
+GET /api/whatsapp/connection
+
+⸻
+
+STATUS WHATSAPP
+
+Endpoint:
+
+GET /api/whatsapp/status
+
+Response contoh:
+
+{
+“connected”: true,
+“phone”: “628xxxxxxxxxx”,
+“status”: “connected”
+}
+
+Jika belum terhubung:
+
+{
+“connected”: false,
+“phone”: null,
+“status”: “disconnected”
+}
+
+Jika sedang menunggu scan:
+
+{
+“connected”: false,
+“phone”: null,
+“status”: “qr_required”
+}
+
+Frontend harus dapat membaca status ini.
+
+⸻
+
+QR CODE
+
+Jika WhatsApp belum terhubung:
+
+Tampilkan halaman/modal:
+
+WHATSAPP
+
+Status:
+🔴 Belum Terhubung
+
+Silakan scan QR Code menggunakan WhatsApp.
+
+[ QR CODE ]
+
+Setelah QR berhasil discan:
+
+🟢 WhatsApp Terhubung
+
+Nomor:
+628xxxxxxxxxx
+
+Jangan membuat QR secara manual.
+
+Gunakan QR yang diberikan oleh Baileys.
+
+QR hanya boleh ditampilkan kepada user yang memiliki hak akses yang sesuai.
+
+⸻
+
+PERSISTENT SESSION
+
+Ini SANGAT PENTING.
+
+Jangan meminta scan QR setiap kali server restart.
+
+Gunakan persistent authentication state Baileys.
+
+Session harus disimpan pada storage yang persistent di Replit.
+
+Contoh struktur:
+
+/data/whatsapp-auth/
+
+atau lokasi persistent lain yang sesuai dengan environment project.
+
+Jangan menyimpan session WhatsApp di browser localStorage.
+
+Jangan mengirim session ke frontend.
+
+Jika Replit memiliki mekanisme persistent storage/volume, gunakan mekanisme tersebut.
+
+Jika environment Replit tidak menjamin filesystem persistent untuk deployment tertentu, jelaskan terlebih dahulu mekanisme persistence yang digunakan dan gunakan storage yang sesuai.
+
+⸻
+
+PENGIRIMAN PESAN
+
+Buat endpoint:
+
+POST /api/whatsapp/send
+
+Request:
+
+{
+“phone”: “628123456789”,
+“message”: “Yth. Bapak/Ibu, kami informasikan…”
+}
+
+Backend harus:
+
+1. Validasi nomor.
+2. Normalisasi nomor Indonesia.
+3. Pastikan WhatsApp sudah connected.
+4. Format JID WhatsApp dengan benar.
+5. Kirim pesan melalui Baileys.
+6. Return hasil pengiriman.
+
+Response sukses:
+
+{
+“success”: true,
+“message”: “Pesan berhasil dikirim”,
+“messageId”: “…”
+}
+
+Response gagal:
+
+{
+“success”: false,
+“message”: “WhatsApp belum terhubung”
+}
+
+⸻
+
+NORMALISASI NOMOR
+
+IPAW user mungkin memasukkan:
+
+081234567890
++6281234567890
+6281234567890
+
+Semua harus dinormalisasi menjadi:
+
+6281234567890
+
+Jangan mengubah nomor internasional selain Indonesia secara sembarangan.
+
+Buat fungsi:
+
+normalizeWhatsAppNumber()
+
+dan gunakan fungsi tersebut secara konsisten.
+
+⸻
+
+FRONTEND IPAW
+
+Jangan mengubah UI existing.
+
+Tambahkan fungsi JavaScript yang reusable:
+
+sendWhatsApp(phone, message)
+
+Contoh:
+
+async function sendWhatsApp(phone, message) {
+const response = await fetch(’/api/whatsapp/send’, {
+method: ‘POST’,
+headers: {
+‘Content-Type’: ‘application/json’
+},
+body: JSON.stringify({
+phone,
+message
+})
+});
+
+return await response.json();
+
+}
+
+Sesuaikan implementasinya dengan framework/struktur existing IPAW.
+
+⸻
+
+TOMBOL WHATSAPP
+
+Tambahkan tombol:
+
+📱 Kirim WhatsApp
+
+Tetapi JANGAN menambahkan tombol secara global ke seluruh halaman.
+
+Buat komponen/fungsi reusable sehingga fitur existing dapat memanggil:
+
+sendWhatsApp(phone, message)
+
+Contoh:
+
+await sendWhatsApp(
+patient.phone,
+message
+);
+
+Setelah berhasil:
+
+“WhatsApp berhasil dikirim.”
+
+Jika gagal:
+
+“WhatsApp gagal dikirim: [alasan]”
+
+Jangan menggunakan alert browser jika IPAW sudah memiliki sistem notification/toast.
+
+Gunakan sistem notifikasi existing IPAW.
+
+⸻
+
+TEMPLATE PESAN
+
+Jangan hardcode seluruh pesan WhatsApp di backend.
+
+Buat fungsi/template yang dapat digunakan frontend.
+
+Contoh:
+
+const message = `
+Yth. Bapak/Ibu,
+
+Kami informasikan mengenai pasien:
+
+Nama: ${patient.name}
+No. RM: ${patient.rm}
+
+${messageContent}
+
+Terima kasih.
+`;
+
+Pertahankan template sesuai fitur IPAW existing jika sudah tersedia.
+
+⸻
+
+RIWAYAT PENGIRIMAN
+
+Jika IPAW sudah memiliki database/log system, gunakan sistem existing.
+
+JANGAN membuat database baru jika tidak diperlukan.
+
+Jika memang perlu logging, buat tabel/log terpisah bernama:
+
+whatsapp_logs
+
+Field minimal:
+
+id
+phone
+message
+status
+message_id
+error_message
+created_at
+
+Tetapi SEBELUM membuat database baru, periksa apakah IPAW sudah memiliki sistem logging yang dapat digunakan.
+
+Jangan mengubah tabel existing.
+
+⸻
+
+KEAMANAN
+
+Sangat penting:
+
+Jangan menyimpan API/session WhatsApp di:
+
+* ipaw.html
+* JavaScript frontend
+* localStorage
+* Google Spreadsheet
+* URL
+* query parameter
+
+Session Baileys harus berada di backend.
+
+Jangan expose credential/session kepada browser.
+
+Endpoint /api/whatsapp/send harus memiliki validasi dan authentication sesuai mekanisme login IPAW yang sudah ada.
+
+Jangan membuat endpoint terbuka tanpa proteksi jika IPAW sudah memiliki authentication.
+
+⸻
+
+MULTI USER
+
+IPAW digunakan oleh beberapa user.
+
+Pastikan:
+
+User A mengirim WhatsApp
+tidak membuat session WhatsApp baru.
+
+Gunakan SATU koneksi WhatsApp pada backend.
+
+Semua user IPAW menggunakan koneksi WhatsApp gateway yang sama, kecuali project existing memang memiliki konsep multi-account.
+
+Jangan membuat QR berbeda untuk setiap user.
+
+⸻
+
+HANDLING CONNECTION
+
+Baileys harus menangani:
+
+* connected
+* disconnected
+* reconnecting
+* QR required
+* logged out
+* connection replaced
+* session invalid
+
+Jika koneksi terputus sementara:
+
+→ lakukan reconnect otomatis.
+
+Jika session benar-benar logout:
+
+→ status menjadi:
+
+“WhatsApp perlu scan ulang”
+
+→ tampilkan QR baru.
+
+Jangan membuat reconnect loop tanpa batas yang membebani server.
+
+Gunakan exponential backoff atau mekanisme reconnect yang wajar.
+
+⸻
+
+SERVER STARTUP
+
+Saat server IPAW start:
+
+1. Inisialisasi WhatsApp module.
+2. Load session existing.
+3. Coba reconnect.
+4. Jika session valid → connected.
+5. Jika membutuhkan QR → status qr_required.
+6. Jangan mengganggu startup fitur IPAW lainnya.
+
+Jika WhatsApp gagal connect, IPAW TETAP harus dapat digunakan.
+
+WhatsApp adalah fitur tambahan, bukan dependency wajib untuk menjalankan IPAW.
+
+⸻
+
+LOGGING
+
+Tambahkan logging backend yang jelas:
+
+[WhatsApp] Initializing
+[WhatsApp] Session loaded
+[WhatsApp] QR generated
+[WhatsApp] Connected
+[WhatsApp] Disconnected
+[WhatsApp] Reconnecting
+[WhatsApp] Message sent
+[WhatsApp] Send failed
+
+Jangan mencetak credential/session WhatsApp ke log.
+
+Jangan mencetak isi pesan pasien secara berlebihan ke console.
+
+⸻
+
+RATE LIMIT
+
+Tambahkan proteksi sederhana agar user tidak dapat melakukan spam request.
+
+Minimal:
+
+* validasi request
+* rate limit endpoint send
+* queue jika diperlukan
+
+Jangan mengirim ratusan pesan secara bersamaan.
+
+⸻
+
+TEST MODE
+
+Tambahkan endpoint atau fungsi test:
+
+POST /api/whatsapp/test
+
+Request:
+
+{
+“phone”: “628xxxxxxxxxx”
+}
+
+Pesan:
+
+“Test WhatsApp IPAW berhasil.”
+
+Gunakan ini untuk memastikan koneksi WhatsApp berhasil sebelum digunakan oleh fitur IPAW.
+
+⸻
+
+UI PENGATURAN
+
+Tambahkan bagian sederhana pada menu Settings existing:
+
+WHATSAPP
+
+Status:
+🟢 Terhubung
+atau
+🔴 Belum terhubung
+
+Nomor:
+628xxxxxxxxxx
+
+Jika belum connected:
+
+[ Hubungkan WhatsApp ]
+
+Jika QR diperlukan:
+
+[ QR CODE ]
+
+Jika sudah connected:
+
+[ Test WhatsApp ]
+[ Putuskan WhatsApp ]
+
+Jangan mengubah desain utama IPAW.
+
+Ikuti style/component existing.
+
+⸻
+
+KOMPATIBILITAS
+
+Periksa package.json existing terlebih dahulu.
+
+Jangan mengganti versi dependency existing secara sembarangan.
+
+Install dependency Baileys hanya jika memang diperlukan.
+
+Sebelum install dependency, periksa apakah ada dependency yang konflik.
+
+Gunakan versi Baileys yang kompatibel dengan Node.js yang digunakan project.
+
+⸻
+
+REPLIT
+
+Project berjalan di Replit.
+
+Pastikan:
+
+* server dapat start melalui workflow existing
+* port existing tidak rusak
+* frontend existing tetap dapat diakses
+* API WhatsApp dapat diakses melalui backend yang sama
+* tidak membuat server kedua yang konflik port kecuali benar-benar diperlukan
+
+Jika Replit menggunakan satu server untuk frontend dan backend, gunakan server tersebut.
+
+⸻
+
+JANGAN LAKUKAN
+
+Jangan:
+
+* membuat ulang IPAW dari awal
+* mengganti framework
+* menghapus fitur
+* mengganti database
+* mengganti Google Spreadsheet
+* mengganti sistem realtime
+* menghapus authentication
+* menghapus existing API
+* mengubah struktur data pasien
+* menyimpan session WhatsApp di frontend
+* memasukkan credential WhatsApp ke ipaw.html
+* membuat WhatsApp Web browser automation dengan Puppeteer/Selenium
+* membuka tab WhatsApp Web untuk mengirim pesan
+* meminta scan QR setiap restart jika session masih valid
+
+⸻
+
+PROSES IMPLEMENTASI
+
+Sebelum coding:
+
+1. Audit struktur project.
+2. Identifikasi frontend IPAW.
+3. Identifikasi backend.
+4. Identifikasi database.
+5. Identifikasi authentication.
+6. Identifikasi server entry point.
+7. Identifikasi workflow Replit.
+8. Identifikasi sistem notification/toast.
+9. Identifikasi sistem logging.
+10. Identifikasi apakah sudah ada API endpoint existing.
+
+Setelah audit, implementasikan WhatsApp sebagai modul terisolasi.
+
+⸻
+
+SETELAH IMPLEMENTASI
+
+Jalankan:
+
+1. npm install / dependency installation sesuai kebutuhan.
+2. npm run build jika project menggunakan build.
+3. test existing application.
+4. test WhatsApp module.
+5. test server restart.
+6. test persistent session.
+7. test reconnect.
+8. test send message.
+9. test logout.
+10. test kembali menjalankan IPAW tanpa WhatsApp.
+
+Pastikan tidak ada regression.
+
+⸻
+
+OUTPUT YANG SAYA INGINKAN
+
+Setelah selesai, berikan saya:
+
+1. File apa saja yang ditambahkan.
+2. File apa saja yang dimodifikasi.
+3. Dependency yang ditambahkan.
+4. Cara menjalankan IPAW.
+5. Cara menghubungkan WhatsApp pertama kali.
+6. Lokasi persistent WhatsApp session.
+7. Endpoint API yang dibuat.
+8. Cara memanggil API dari IPAW.
+9. Cara melakukan test WhatsApp.
+10. Cara melakukan logout dan scan ulang.
+11. Apakah deployment Replit yang digunakan mendukung persistent session atau membutuhkan persistent storage tambahan.
+
+JANGAN langsung melakukan perubahan besar.
+
+Audit project terlebih dahulu, kemudian implementasikan perubahan seminimal mungkin.

@@ -1,0 +1,43 @@
+- [Offline distribution](offline-distribution.md) — derive Vite asset names from the build manifest and inline dynamic imports for a truly self-contained HTML download.
+- [Offline build parity](offline-build-parity.md) — regenerate and verify the standalone HTML from the same production bundle as the online app.
+- [Startup resilience](startup-resilience.md) — local IndexedDB/session initialization must not wait on optional cloud synchronization.
+- [KTM field mapping](ktm-field-mapping.md) — parse KTM values by table headers first, with legacy positional parsing only as fallback.
+- [KTM network access](ktm-network-access.md) — cloud proxy may not resolve the internal TrakCare host, so browser direct-fetch fallback must remain enabled.
+- [GAS TrakCare routing](gas-trakcare-routing.md) — GAS-hosted ipawv3 must proxy read-only TrakCare pages server-side; use the public apps.emc host for KTM.
+- [Cloud backup payloads](cloud-backup-payloads.md) — full IndexedDB backups need a larger API body limit, and upload uses `save` while restore uses `restore`.
+- [GAS database-first contract](gas-database-first.md) — GAS Spreadsheet remains authoritative; IndexedDB is only cache/offline fallback, with additive row-level actions.
+- [Cloud backup UX](cloud-backup-ux.md) — background uploads stay silent; manual backup progress belongs inline, with final result feedback only.
+- [Cloud status proxy](cloud-status-proxy.md) — a stopped API Server makes Cloud appear offline even when the GAS deployment is reachable.
+- [Cloud backup progress](cloud-backup-progress.md) — show one transient live progress card in the notification center, not one unread notification per chunk.
+- [Cloud restore master data](cloud-restore-master-data.md) — legacy Cloud snapshots may have tariff items without parent records; restore must rebuild displayable parents.
+- [Cloud restore overwrite](cloud-restore-overwrite.md) — confirmed Restore Cloud treats the validated Cloud snapshot as authoritative and clears unsynced local queues.
+- [IGD proxy routing](igd-proxy-routing.md) — web IGD Ward should prefer the same-origin proxy; direct TrakCare fetch is only a fallback for static/internal-network contexts.
+- [Procedure estimates](estimasi-tindakan.md) — procedure estimates stay separate from inpatient estimates; templates hold items only and prices resolve live by payer/class.
+- [Billing rule engine](billing-rule-engine.md) — preserve local rules during schema upgrades and evaluate formulas with a restricted safe parser.
+- [Operating theatre integration](operating-theatre-integration.md) — use short-lived proxy sessions while keeping credentials and latest dashboard data local.
+- [Operating theatre source isolation](operating-theatre-source-isolation.md) — an empty planned-action dashboard must stay empty; never fill it from the In Progress status list.
+- [Preview routing](preview-routing.md) — only one web artifact should own the root preview path; duplicate root registrations can produce 502s or the wrong app.
+- [Preview root routing](preview-root-routing.md) — only one web artifact may own `/`; move scaffolds aside and use absolute workflow paths for imported apps.
+- [Startup cloud restore](startup-cloud-restore.md) — restore on app open must be backgrounded with an abortable timeout so unavailable cloud never blocks local login.
+- [Offline seed admin](offline-seed-admin.md) — preserve the hardcoded initial admin hash during first Cloud restore so a fresh standalone download remains log-in capable.
+- [API bundle rebuild](api-bundle-rebuild.md) — rebuild and restart the managed API workflow when source routes exist but the running bundle returns 404.
+- [Checklist reminders](checklist-reminders.md) — reminder dates are deadlines and must remain visible even after the date field is filled.
+- [Checklist patient sync](checklist-patient-sync.md) — normalize inpatient dates/statuses from TrakCare, Excel, and cloud restores before applying the H-1 filter.
+- [Action plan checklist](action-plan-checklist.md) — inpatient action dates are stored per episode and trigger billing review from the following day.
+- [Patient identity resolution](patient-identity-resolution.md) — cross-feature joins require two matching identity fields and reject conflicting identifiers.
+- [Operating Theatre checklist automation](operating-theatre-checklist-automation.md) — matched OT plans create episode checklists and trigger billing review the next day.
+- [Operating Theatre preadmission](operating-theatre-preadmission.md) — split live planned rows into preadmission versus completed action using active inpatient identity mapping.
+- [Operating Theatre planned cache](operating-theatre-planned-cache.md) — retain planned patients across missing source rows; live identity matches overwrite updated operation dates.
+- [Offline launcher bridge](offline-launcher-bridge.md) — the Windows launcher uses app-mode Chrome and a local PowerShell bridge for cloud backup on RS networks.
+- [Offline Cloud fetch](offline-cloud-fetch.md) — opening GAS can work while file:// fetch is blocked; prefer the local bridge when it is running.
+- [Master user cloud backup](master-user-cloud-backup.md) — every account mutation uses durable full-snapshot backup and retries after offline edits.
+- [Notification deduplication](notification-deduplication.md) — notification fingerprints must survive IndexedDB reset and Cloud restore so unchanged data is not announced again.
+- [Persistent notification interaction](notification-interaction.md) — sound-backed alerts remain until user action and stop audio on popup interaction.
+- [Checklist reminder navigation](checklist-navigation.md) — carry reminder filters through hash-route navigation with a short-lived app intent, not a query string.
+- [User deletion safeguards](user-deletion-safeguards.md) — destructive Master User actions require confirmation and must preserve the current account and last superuser.
+- [Checklist contact and audit history](checklist-contact-and-history.md) — the patient record is canonical for guardian phone data, while completed checklists retain answer-level audit detail.
+- [Billing notification cycles](billing-notification-cycles.md) — sent billing notices reset to zero and unsent at each later even inpatient day.
+- [Offline realtime foundation](offline-realtime-foundation.md) — standalone ipaw.html authenticates locally and keeps durable pending changes in an IndexedDB outbox.
+- [Billing WhatsApp QR](qr-whatsapp-billing.md) — staff scans a local QR that opens a prefilled WhatsApp chat to the patient's family number.
+- [KTM email handoff](ktm-email-handoff.md) — KTM opens a reviewed, prefilled local email draft with insurer recipient and standardized subject.
+- [Master tariff activation](master-tariff-activation.md) — first imported tariff is immediately usable; legacy workspaces fall back to the latest tariff set when none is active.

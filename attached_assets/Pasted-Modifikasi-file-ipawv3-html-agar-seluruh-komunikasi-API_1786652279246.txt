@@ -1,0 +1,85 @@
+Modifikasi file ipawv3.html agar seluruh komunikasi API ke Google Apps Script Web App berjalan dengan benar.
+
+KETENTUAN:
+
+1. Jangan mengubah UI, layout, fitur, database lokal, IndexedDB, atau alur aplikasi yang sudah ada.
+2. Jangan menghapus fitur yang sudah berjalan.
+3. Pertahankan seluruh fungsi IPAW v3.
+4. Fokus hanya pada perbaikan koneksi/fetch API ke Google Apps Script.
+
+GOOGLE APPS SCRIPT:
+
+* API menggunakan Google Apps Script Web App.
+* URL API harus disimpan dalam satu konfigurasi terpusat, misalnya:
+    const GAS_API_URL = "URL_GAS_WEB_APP_EXEC";
+* Gunakan URL deployment /exec, bukan /dev.
+* Jangan hardcode URL GAS di banyak tempat.
+
+PERBAIKI API CLIENT:
+
+* Cari semua penggunaan fetch() yang berhubungan dengan backend/API.
+* Satukan menjadi helper function seperti apiRequest().
+* Semua request ke GAS harus melalui helper tersebut.
+* Support GET dan POST sesuai kebutuhan fungsi yang sudah ada.
+* Untuk POST gunakan JSON.
+* Parse response JSON dengan aman.
+* Tambahkan timeout request.
+* Tambahkan error handling yang jelas.
+* Jangan menggunakan mode: "no-cors" karena aplikasi harus dapat membaca response JSON.
+* Jangan menggunakan proxy pihak ketiga.
+* Jangan mengubah response GAS secara paksa di frontend.
+
+CONTOH POLA:
+apiRequest(endpoint, options) harus:
+
+1. Membentuk URL GAS dengan benar.
+2. Mengirim request.
+3. Mengecek response.ok.
+4. Membaca response sebagai JSON.
+5. Jika response bukan JSON, tampilkan error yang informatif.
+6. Jika fetch gagal, tampilkan informasi bahwa koneksi ke GAS gagal.
+7. Logging error menggunakan console.error().
+
+KOMPATIBILITAS:
+
+* IPAW v3 dijalankan melalui local server.
+* Jangan mengasumsikan aplikasi berjalan dari localhost tertentu.
+* Jangan menggunakan URL relatif seperti /api/... untuk endpoint GAS.
+* Semua request backend harus menggunakan URL GAS Web App yang dikonfigurasi.
+
+LOGIN DAN CRUD:
+Pastikan fungsi login, restore data, tambah, edit, hapus, dan sinkronisasi data yang sebelumnya menggunakan API tetap menggunakan API GAS setelah perubahan.
+
+DEBUG MODE:
+Tambahkan konfigurasi:
+const API_DEBUG = true;
+
+Jika aktif, log:
+
+* URL endpoint yang dipanggil
+* method
+* status HTTP
+* response JSON
+* error fetch
+
+Jangan log password, token, atau data sensitif.
+
+PENTING:
+
+* Jangan membuat backend baru.
+* Jangan mengganti Google Apps Script dengan Firebase/Supabase.
+* Jangan mengubah Code.gs.
+* Jangan membuat server proxy baru.
+* Jangan menggunakan no-cors.
+* Jangan menghapus fitur existing.
+* Jangan melakukan refactor besar yang tidak diperlukan.
+
+HASIL AKHIR:
+
+1. Modifikasi langsung ipawv3.html.
+2. Pastikan file tetap bisa dibuka seperti sebelumnya.
+3. Pastikan semua pemanggilan API menggunakan helper API yang sama.
+4. Berikan ringkasan perubahan.
+5. Tampilkan bagian konfigurasi GAS_API_URL yang harus saya isi.
+6. Jika ada bagian fetch existing yang tidak kompatibel dengan GAS, perbaiki tanpa mengubah fungsi aplikasinya.
+7. Jangan membuat file baru kecuali benar-benar diperlukan.

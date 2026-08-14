@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "7ox2YCejVdUW0XHoV_vOJ"
+uri = "file://gas/BackupCloudSpreadsheet.gs"
+type = "unspecified"
+title = "BackupCloudSpreadsheet.gs — GAS terbaru"
+description = "Kode Google Apps Script terbaru untuk IPAW/EMC Admission. Tempel seluruh isi file ini ke project Google Apps Script, lalu deploy sebagai Web App dengan Execute as: Me dan Who has access: Anyone."

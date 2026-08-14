@@ -1,0 +1,801 @@
+/**
+ * IPAW / EMC Admission — Cloud Backup ke Google Sheets
+ *
+ * Pasang script ini di Google Apps Script, lalu deploy sebagai Web App:
+ *   Execute as: Me
+ *   Who has access: Anyone
+ *
+ * Spreadsheet tujuan:
+ *   https://docs.google.com/spreadsheets/d/1UVUVz1I3FuNcQ0Vomo4LU9loj3KbyEwBPfgy_7zsZn8
+ *
+ * Kontrak aplikasi:
+ *   POST { action: "save", apiKey: "IPAW-EMC", database: { users: [...], ... } }
+ *   POST { action: "saveStart", apiKey, backupId, totalChunks, totalEntries }
+ *   POST { action: "saveChunk", apiKey, backupId, chunkIndex, entries: [...] }
+ *   POST { action: "saveCommit", apiKey, backupId, totalChunks, totalEntries }
+ *   POST { action: "restore", apiKey: "IPAW-EMC" }
+ *   GET  ?action=readStore&store=users&apiKey=IPAW-EMC
+ *   POST { action: "readStore", store: "users", apiKey: "IPAW-EMC" }
+ *   POST { action: "upsertRecord", store, keyField, record, apiKey }
+ *   POST { action: "deleteRecord", store, keyField, key, apiKey }
+ *   GET  ?action=status
+ *   GET  ?action=restore&apiKey=IPAW-EMC
+ */
+
+const IPAW_CONFIG = Object.freeze({
+  spreadsheetId: '1UVUVz1I3FuNcQ0Vomo4LU9loj3KbyEwBPfgy_7zsZn8',
+  apiKey: 'IPAW-EMC',
+  dataSheetName: 'IPAW_Backup_Data',
+  metaSheetName: 'IPAW_Backup_Meta',
+  stagingSheetName: 'IPAW_Backup_Staging',
+  changeSheetName: 'IPAW_Cloud_Changes',
+  // Google Sheets membatasi isi satu sel sekitar 50.000 karakter.
+  // Chunk lebih kecil memberi ruang untuk encoding dan perubahan isi.
+  chunkSize: 45000,
+});
+
+const DATA_HEADERS = [
+  'store',
+  'recordIndex',
+  'chunkIndex',
+  'chunkTotal',
+  'jsonChunk',
+];
+
+const META_HEADERS = [
+  'key',
+  'value',
+];
+
+const STAGING_HEADERS = [
+  'backupId',
+  'batchIndex',
+  'totalBatches',
+  'store',
+  'recordIndex',
+  'chunkIndex',
+  'chunkTotal',
+  'jsonChunk',
+];
+
+const CHANGE_HEADERS = [
+  'revision',
+  'changedAt',
+  'action',
+  'store',
+  'keyField',
+  'recordKey',
+  'recordJson',
+];
+
+const CLOUD_STORE_KEY_FIELDS = Object.freeze({
+  users: 'id',
+  patients: 'noRM',
+  episodes: 'id',
+  pendings: 'id',
+  justInfos: 'id',
+  outlookEmails: 'id',
+  operanShifts: 'id',
+  importLogs: 'id',
+  activityLogs: 'id',
+  settings: 'key',
+  masterTarifs: 'id',
+  masterTarifItems: 'id',
+  estimasiBiaya: 'id',
+  syncLogs: 'id',
+  billingRules: 'id',
+  billingChecks: 'id',
+  notifikasiBilling: 'id',
+  kasirTemplates: 'id',
+  uraianKonfirmasi: 'noRM',
+  uraianKonfirmasiEpisodes: 'recordKey',
+  masterTemplateTindakan: 'id',
+  estimasiTindakan: 'id',
+  masterEstimasiTindakan: 'id',
+  masterEstimasiTarif: 'id',
+  masterEstimasiKategori: 'id',
+  masterEstimasiMappings: 'id',
+  masterEstimasiMeta: 'key',
+  operatingTheatreCache: 'key',
+  operatingTheatreCompletedCache: 'key',
+  operatingTheatrePreadmissionCache: 'key',
+  operatingTheatreInProgressCache: 'key',
+  checklistMasters: 'id',
+  checklistEpisodes: 'episodeNo',
+  checklistHistory: 'id',
+  patchRegistry: 'id',
+  patchData: 'key',
+  patchBackups: 'id',
+  patchActivityLogs: 'id',
+});
+
+/**
+ * Endpoint GET.
+ */
+function doGet(e) {
+  try {
+    const params = e && e.parameter ? e.parameter : {};
+    const action = String(params.action || 'status').toLowerCase();
+
+    if (action === 'status') {
+      return jsonResponse({
+        success: true,
+        status: 'ok',
+        spreadsheetId: IPAW_CONFIG.spreadsheetId,
+        savedAt: readMeta_('savedAt') || null,
+      });
+    }
+
+    if (action === 'restore') {
+      assertApiKey_(params.apiKey);
+      return restoreResponse_();
+    }
+
+    if (action === 'readstore') {
+      assertApiKey_(params.apiKey);
+      return readStoreResponse_(String(params.store || ''));
+    }
+
+    if (action === 'save' || action === 'backup' || action === 'upload') {
+      assertApiKey_(params.apiKey);
+      const rawData = params.database || params.data || params.backup || '';
+      const database = parseDatabase_(rawData);
+      return saveResponse_(database);
+    }
+
+    return jsonResponse({
+      success: false,
+      error: 'Unknown action: ' + action,
+    });
+  } catch (error) {
+    return errorResponse_(error);
+  }
+}
+
+/**
+ * Endpoint POST. Aplikasi mengirim Content-Type text/plain agar request
+ * langsung dari file offline tidak memerlukan CORS preflight.
+ */
+function doPost(e) {
+  try {
+    const body = parseRequestBody_(e);
+    const action = String(body.action || '').toLowerCase();
+    assertApiKey_(body.apiKey);
+
+    if (action === 'save' || action === 'backup' || action === 'upload') {
+      return saveResponse_(parseDatabase_(body.database || body.data || body.backup));
+    }
+
+    if (action === 'savestart') {
+      return saveStartResponse_(body);
+    }
+
+    if (action === 'savechunk') {
+      return saveChunkResponse_(body);
+    }
+
+    if (action === 'savecommit') {
+      return saveCommitResponse_(body);
+    }
+
+    if (action === 'restore') {
+      return restoreResponse_();
+    }
+
+    if (action === 'readstore') {
+      return readStoreResponse_(String(body.store || ''));
+    }
+
+    if (action === 'upsertrecord') {
+      return upsertRecordResponse_(body);
+    }
+
+    if (action === 'deleterecord') {
+      return deleteRecordResponse_(body);
+    }
+
+    return jsonResponse({
+      success: false,
+      error: 'Unknown action: ' + action,
+    });
+  } catch (error) {
+    return errorResponse_(error);
+  }
+}
+
+/**
+ * Menyimpan seluruh IndexedDB snapshot.
+ *
+ * Setiap record menjadi satu atau beberapa baris:
+ * store | recordIndex | chunkIndex | chunkTotal | jsonChunk
+ *
+ * Dengan cara ini data object store tetap bisa dipulihkan walaupun satu
+ * record berisi foto/PDF base64 yang melebihi batas satu sel.
+ */
+function saveResponse_(database) {
+  validateDatabase_(database);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return publishDatabase_(database);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveStartResponse_(body) {
+  const backupId = String(body.backupId || '');
+  const totalBatches = Number(body.totalChunks);
+  const totalEntries = Number(body.totalEntries);
+  if (!backupId || !Number.isInteger(totalBatches) || totalBatches < 1) {
+    throw new Error('Metadata backup bertahap tidak valid.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+    const staging = getOrCreateSheet_(spreadsheet, IPAW_CONFIG.stagingSheetName);
+    staging.clearContents();
+    staging.getRange(1, 1, 1, STAGING_HEADERS.length).setValues([STAGING_HEADERS]);
+    staging.setFrozenRows(1);
+    PropertiesService.getScriptProperties().setProperty(
+      'IPAW_PENDING_BACKUP',
+      JSON.stringify({
+        backupId: backupId,
+        totalBatches: totalBatches,
+        totalEntries: totalEntries,
+        receivedBatches: [],
+        startedAt: new Date().toISOString(),
+      }),
+    );
+    return jsonResponse({ success: true, action: 'saveStart', backupId: backupId });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveChunkResponse_(body) {
+  const backupId = String(body.backupId || '');
+  const batchIndex = Number(body.chunkIndex);
+  const totalBatches = Number(body.totalChunks);
+  const entries = Array.isArray(body.entries) ? body.entries : [];
+  const pending = readPendingBackup_();
+  if (!pending || pending.backupId !== backupId) {
+    throw new Error('Sesi backup tidak ditemukan atau sudah kedaluwarsa.');
+  }
+  if (pending.totalBatches !== totalBatches || !Number.isInteger(batchIndex) ||
+      batchIndex < 0 || batchIndex >= totalBatches) {
+    throw new Error('Nomor chunk backup tidak valid.');
+  }
+  if (pending.receivedBatches.indexOf(batchIndex) >= 0) {
+    return jsonResponse({ success: true, action: 'saveChunk', duplicate: true });
+  }
+
+  const rows = entries.map(function(entry) {
+    return [
+      backupId,
+      batchIndex,
+      totalBatches,
+      String(entry.store || ''),
+      Number(entry.recordIndex),
+      Number(entry.chunkIndex),
+      Number(entry.chunkTotal),
+      String(entry.jsonChunk || ''),
+    ];
+  });
+  if (!rows.length) throw new Error('Chunk backup kosong.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+    const staging = getOrCreateSheet_(spreadsheet, IPAW_CONFIG.stagingSheetName);
+    const startRow = staging.getLastRow() + 1;
+    staging.getRange(startRow, 1, rows.length, STAGING_HEADERS.length).setValues(rows);
+    pending.receivedBatches.push(batchIndex);
+    pending.receivedBatches.sort(function(a, b) { return a - b; });
+    PropertiesService.getScriptProperties().setProperty('IPAW_PENDING_BACKUP', JSON.stringify(pending));
+    return jsonResponse({
+      success: true,
+      action: 'saveChunk',
+      chunkIndex: batchIndex,
+      entries: rows.length,
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveCommitResponse_(body) {
+  const backupId = String(body.backupId || '');
+  const pending = readPendingBackup_();
+  if (!pending || pending.backupId !== backupId) {
+    throw new Error('Sesi backup tidak ditemukan atau sudah kedaluwarsa.');
+  }
+  if (pending.receivedBatches.length !== pending.totalBatches) {
+    throw new Error(
+      'Backup belum lengkap: diterima ' + pending.receivedBatches.length +
+      ' dari ' + pending.totalBatches + ' chunk.',
+    );
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+    const staging = spreadsheet.getSheetByName(IPAW_CONFIG.stagingSheetName);
+    if (!staging || staging.getLastRow() < 2) throw new Error('Staging backup kosong.');
+    const values = staging
+      .getRange(2, 1, staging.getLastRow() - 1, STAGING_HEADERS.length)
+      .getValues();
+    const database = {};
+    values.forEach(function(row) {
+      const store = String(row[3] || '');
+      if (!store) return;
+      if (!database[store]) database[store] = {};
+      const recordIndex = Number(row[4]);
+      if (!database[store][recordIndex]) database[store][recordIndex] = {};
+      database[store][recordIndex][Number(row[5])] = {
+        total: Number(row[6]),
+        value: String(row[7] || ''),
+      };
+    });
+
+    const restored = {};
+    Object.keys(database).forEach(function(store) {
+      restored[store] = Object.keys(database[store]).map(Number).sort(function(a, b) {
+        return a - b;
+      }).map(function(recordIndex) {
+        const chunks = database[store][recordIndex];
+        const indexes = Object.keys(chunks).map(Number).sort(function(a, b) { return a - b; });
+        if (!indexes.length) throw new Error('Record backup kosong pada store "' + store + '".');
+        const total = chunks[indexes[0]].total;
+        let serialized = '';
+        for (let index = 0; index < total; index += 1) {
+          if (!chunks[index]) throw new Error('Chunk record tidak lengkap pada store "' + store + '".');
+          serialized += chunks[index].value;
+        }
+        return JSON.parse(serialized);
+      });
+    });
+
+    validateDatabase_(restored);
+    const result = publishDatabase_(restored);
+    staging.clearContents();
+    staging.getRange(1, 1, 1, STAGING_HEADERS.length).setValues([STAGING_HEADERS]);
+    PropertiesService.getScriptProperties().deleteProperty('IPAW_PENDING_BACKUP');
+    return jsonResponse({
+      success: true,
+      action: 'saveCommit',
+      message: 'Backup bertahap berhasil dipublikasikan ke Google Sheets.',
+      metadata: result.metadata,
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function readPendingBackup_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('IPAW_PENDING_BACKUP');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.receivedBatches)) parsed.receivedBatches = [];
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function publishDatabase_(database) {
+  // LocalDB-first workstations can have different Pending rows at the same
+  // time. Full snapshots must merge this shared operational store instead of
+  // replacing it with whichever computer uploaded last.
+  mergePendingStoreWithCloud_(database);
+
+  const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+  const dataSheet = getOrCreateSheet_(spreadsheet, IPAW_CONFIG.dataSheetName);
+  const metaSheet = getOrCreateSheet_(spreadsheet, IPAW_CONFIG.metaSheetName);
+  const now = new Date().toISOString();
+  const rows = [];
+  Object.keys(database).sort().forEach(function(storeName) {
+    const records = Array.isArray(database[storeName]) ? database[storeName] : [];
+    records.forEach(function(record, recordIndex) {
+      const serialized = JSON.stringify(record);
+      const chunks = splitIntoChunks_(serialized, IPAW_CONFIG.chunkSize);
+      chunks.forEach(function(chunk, chunkIndex) {
+        rows.push([storeName, recordIndex, chunkIndex, chunks.length, chunk]);
+      });
+    });
+  });
+  dataSheet.clearContents();
+  dataSheet.getRange(1, 1, 1, DATA_HEADERS.length).setValues([DATA_HEADERS]);
+  if (rows.length) dataSheet.getRange(2, 1, rows.length, DATA_HEADERS.length).setValues(rows);
+  dataSheet.setFrozenRows(1);
+  const storeCounts = {};
+  Object.keys(database).forEach(function(storeName) {
+    storeCounts[storeName] = Array.isArray(database[storeName]) ? database[storeName].length : 0;
+  });
+  writeMeta_(metaSheet, {
+    savedAt: now,
+    storeCount: Object.keys(database).length,
+    rowCount: rows.length,
+    storeCounts: JSON.stringify(storeCounts),
+  });
+  return {
+    metadata: { savedAt: now, stores: Object.keys(database).length, rows: rows.length },
+  };
+}
+
+function pendingRecordTime_(record) {
+  if (!record || typeof record !== 'object') return 0;
+  return Number(record.updatedAt) || Number(record.createdAt) || 0;
+}
+
+function pendingRecordSignature_(record) {
+  try {
+    return JSON.stringify(record);
+  } catch (error) {
+    return '';
+  }
+}
+
+function choosePendingRecord_(current, incoming) {
+  if (!current) return incoming;
+  if (!incoming) return current;
+  var currentTime = pendingRecordTime_(current);
+  var incomingTime = pendingRecordTime_(incoming);
+  if (incomingTime !== currentTime) {
+    return incomingTime > currentTime ? incoming : current;
+  }
+  // Date.now() can collide on two workstations. A deterministic tie-breaker
+  // makes both clients converge without silently dropping the whole store.
+  return pendingRecordSignature_(incoming) >= pendingRecordSignature_(current)
+    ? incoming
+    : current;
+}
+
+function mergePendingStoreWithCloud_(database) {
+  if (!database || !Array.isArray(database.pendings)) return;
+
+  var existing;
+  try {
+    existing = readDatabase_();
+  } catch (error) {
+    // There may not be a first backup yet. In that case the incoming snapshot
+    // is the initial Cloud state.
+    return;
+  }
+
+  var merged = {};
+  (Array.isArray(existing.pendings) ? existing.pendings : []).forEach(function(record) {
+    var key = record && record.id != null ? String(record.id).trim() : '';
+    if (key) merged[key] = record;
+  });
+  database.pendings.forEach(function(record) {
+    var key = record && record.id != null ? String(record.id).trim() : '';
+    if (key) merged[key] = choosePendingRecord_(merged[key], record);
+  });
+  database.pendings = Object.keys(merged).map(function(key) { return merged[key]; });
+}
+
+/**
+ * Membaca semua chunk dan membangun kembali:
+ * { users: [...], patients: [...], settings: [...], ... }
+ */
+function restoreResponse_() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+    const dataSheet = spreadsheet.getSheetByName(IPAW_CONFIG.dataSheetName);
+    if (!dataSheet || dataSheet.getLastRow() < 2) {
+      return jsonResponse({
+        success: false,
+        error: 'Belum ada backup yang tersimpan di Google Sheets.',
+      });
+    }
+
+    const values = dataSheet
+      .getRange(2, 1, dataSheet.getLastRow() - 1, DATA_HEADERS.length)
+      .getValues();
+    const grouped = {};
+
+    values.forEach(function(row) {
+      const storeName = String(row[0] || '');
+      if (!storeName) return;
+      const recordIndex = Number(row[1]);
+      const chunkIndex = Number(row[2]);
+      const chunkTotal = Number(row[3]);
+      const chunk = String(row[4] || '');
+
+      if (!grouped[storeName]) grouped[storeName] = {};
+      if (!grouped[storeName][recordIndex]) {
+        grouped[storeName][recordIndex] = {
+          total: chunkTotal,
+          chunks: {},
+        };
+      }
+      grouped[storeName][recordIndex].chunks[chunkIndex] = chunk;
+    });
+
+    const database = {};
+    Object.keys(grouped).forEach(function(storeName) {
+      database[storeName] = Object.keys(grouped[storeName])
+        .map(Number)
+        .sort(function(a, b) { return a - b; })
+        .map(function(recordIndex) {
+          const item = grouped[storeName][recordIndex];
+          const serialized = [];
+          for (let index = 0; index < item.total; index += 1) {
+            if (item.chunks[index] === undefined) {
+              throw new Error(
+                'Chunk backup tidak lengkap pada store "' +
+                storeName + '", record ' + recordIndex + '.',
+              );
+            }
+            serialized.push(item.chunks[index]);
+          }
+          return JSON.parse(serialized.join(''));
+        });
+    });
+
+    validateDatabase_(database);
+    return jsonResponse({
+      success: true,
+      database: database,
+      metadata: {
+        savedAt: readMeta_('savedAt') || null,
+        stores: Object.keys(database).length,
+      },
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Database-first row operations.
+ *
+ * The spreadsheet remains the source of truth. The existing chunked data
+ * layout is intentionally reused, so old backups and the new row-level
+ * client can coexist. Each mutation republishes the complete logical
+ * database under a script lock; this trades some write throughput for a
+ * simple, atomic contract that cannot leave the sheet half-updated.
+ */
+function readStoreResponse_(storeName) {
+  if (!storeName || !/^[A-Za-z][A-Za-z0-9_-]{0,80}$/.test(storeName)) {
+    throw new Error('Nama store tidak valid.');
+  }
+  const database = readDatabase_();
+  return jsonResponse({
+    success: true,
+    store: storeName,
+    records: Array.isArray(database[storeName]) ? database[storeName] : [],
+    metadata: {
+      savedAt: readMeta_('savedAt') || null,
+    },
+  });
+}
+
+function upsertRecordResponse_(body) {
+  const storeName = String(body.store || '');
+  const keyField = String(body.keyField || '');
+  if (!storeName || !keyField || !body.record || typeof body.record !== 'object' ||
+      Array.isArray(body.record)) {
+    throw new Error('Payload upsert record tidak lengkap.');
+  }
+  const key = recordKey_(body.record, keyField);
+  if (!key) throw new Error('Record tidak memiliki nilai kunci.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const database = readDatabase_();
+    const records = Array.isArray(database[storeName]) ? database[storeName] : [];
+    const index = records.findIndex(function(record) {
+      return recordKey_(record, keyField) === key;
+    });
+    if (index >= 0) {
+      records[index] = storeName === 'pendings'
+        ? choosePendingRecord_(records[index], body.record)
+        : body.record;
+    } else {
+      records.push(body.record);
+    }
+    database[storeName] = records;
+    validateDatabase_(database);
+    const result = publishDatabase_(database);
+    return jsonResponse({
+      success: true,
+      action: 'upsertRecord',
+      store: storeName,
+      record: body.record,
+      created: index < 0,
+      metadata: result.metadata,
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteRecordResponse_(body) {
+  const storeName = String(body.store || '');
+  const keyField = String(body.keyField || '');
+  const key = String(body.key == null ? '' : body.key).trim();
+  if (!storeName || !keyField || !key) {
+    throw new Error('Payload delete record tidak lengkap.');
+  }
+  if (storeName === 'users') {
+    throw new Error('Penghapusan user harus melalui alur Master User aplikasi.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const database = readDatabase_();
+    const records = Array.isArray(database[storeName]) ? database[storeName] : [];
+    const remaining = records.filter(function(record) {
+      return recordKey_(record, keyField) !== key;
+    });
+    database[storeName] = remaining;
+    validateDatabase_(database);
+    const result = publishDatabase_(database);
+    return jsonResponse({
+      success: true,
+      action: 'deleteRecord',
+      store: storeName,
+      deleted: remaining.length !== records.length,
+      metadata: result.metadata,
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function recordKey_(record, keyField) {
+  if (!record || typeof record !== 'object') return '';
+  const value = record[keyField];
+  return value == null ? '' : String(value).trim();
+}
+
+function readDatabase_() {
+  const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+  const dataSheet = spreadsheet.getSheetByName(IPAW_CONFIG.dataSheetName);
+  if (!dataSheet || dataSheet.getLastRow() < 2) {
+    throw new Error('Belum ada backup yang tersimpan di Google Sheets.');
+  }
+
+  const values = dataSheet
+    .getRange(2, 1, dataSheet.getLastRow() - 1, DATA_HEADERS.length)
+    .getValues();
+  const grouped = {};
+  values.forEach(function(row) {
+    const storeName = String(row[0] || '');
+    if (!storeName) return;
+    const recordIndex = Number(row[1]);
+    const chunkIndex = Number(row[2]);
+    const chunkTotal = Number(row[3]);
+    const chunk = String(row[4] || '');
+    if (!grouped[storeName]) grouped[storeName] = {};
+    if (!grouped[storeName][recordIndex]) {
+      grouped[storeName][recordIndex] = { total: chunkTotal, chunks: {} };
+    }
+    grouped[storeName][recordIndex].chunks[chunkIndex] = chunk;
+  });
+
+  const database = {};
+  Object.keys(grouped).forEach(function(storeName) {
+    database[storeName] = Object.keys(grouped[storeName])
+      .map(Number)
+      .sort(function(a, b) { return a - b; })
+      .map(function(recordIndex) {
+        const item = grouped[storeName][recordIndex];
+        const serialized = [];
+        for (let index = 0; index < item.total; index += 1) {
+          if (item.chunks[index] === undefined) {
+            throw new Error('Chunk backup tidak lengkap pada store "' + storeName + '".');
+          }
+          serialized.push(item.chunks[index]);
+        }
+        return JSON.parse(serialized.join(''));
+      });
+  });
+  validateDatabase_(database);
+  return database;
+}
+
+function parseRequestBody_(e) {
+  const raw = e && e.postData && e.postData.contents;
+  if (!raw) throw new Error('Body request kosong.');
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(String(raw));
+  } catch (error) {
+    throw new Error('Body request bukan JSON yang valid.');
+  }
+}
+
+function parseDatabase_(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      // Ditangani oleh pesan umum di bawah.
+    }
+  }
+  throw new Error('Payload database backup tidak valid.');
+}
+
+function validateDatabase_(database) {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) {
+    throw new Error('Database backup harus berupa object.');
+  }
+  if (!Array.isArray(database.users) || database.users.length === 0) {
+    throw new Error('Database backup wajib memiliki store users yang tidak kosong.');
+  }
+  Object.keys(database).forEach(function(storeName) {
+    if (!Array.isArray(database[storeName])) {
+      throw new Error('Store "' + storeName + '" harus berupa array.');
+    }
+  });
+}
+
+function assertApiKey_(received) {
+  if (String(received || '') !== IPAW_CONFIG.apiKey) {
+    throw new Error('API key tidak valid.');
+  }
+}
+
+function splitIntoChunks_(value, size) {
+  if (!value) return [''];
+  const chunks = [];
+  for (let start = 0; start < value.length; start += size) {
+    chunks.push(value.substring(start, start + size));
+  }
+  return chunks;
+}
+
+function getOrCreateSheet_(spreadsheet, name) {
+  return spreadsheet.getSheetByName(name) || spreadsheet.insertSheet(name);
+}
+
+function writeMeta_(sheet, values) {
+  sheet.clearContents();
+  const rows = Object.keys(values).map(function(key) {
+    return [key, values[key]];
+  });
+  sheet.getRange(1, 1, 1, META_HEADERS.length).setValues([META_HEADERS]);
+  if (rows.length) sheet.getRange(2, 1, rows.length, META_HEADERS.length).setValues(rows);
+  sheet.setFrozenRows(1);
+}
+
+function readMeta_(key) {
+  const spreadsheet = SpreadsheetApp.openById(IPAW_CONFIG.spreadsheetId);
+  const sheet = spreadsheet.getSheetByName(IPAW_CONFIG.metaSheetName);
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  const row = values.find(function(item) { return String(item[0]) === key; });
+  return row ? String(row[1] || '') : '';
+}
+
+function jsonResponse(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function errorResponse_(error) {
+  return jsonResponse({
+    success: false,
+    error: error && error.message ? error.message : String(error),
+  });
+}

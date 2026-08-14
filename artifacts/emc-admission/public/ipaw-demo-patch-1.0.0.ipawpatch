@@ -1,0 +1,12 @@
+{
+  "manifest": {
+    "id": "ipaw-demo-patch",
+    "name": "IPAW Demo Patch",
+    "version": "1.0.0",
+    "author": "IPAW",
+    "description": "Patch demo untuk menguji siklus install, enable, disable, rollback, dan uninstall.",
+    "minIPAWVersion": "1.0.0",
+    "dependencies": []
+  },
+  "code": "IPAW.registerPatch({\n  id: \"ipaw-demo-patch\",\n  name: \"IPAW Demo Patch\",\n  version: \"1.0.0\",\n  install(context) {\n    return context.storage.set(\"installed\", true);\n  },\n  activate(context) {\n    context.ui.registerMenuItem({\n      path: \"/patch/ipaw-demo-patch/patch-test\",\n      label: \"Patch Test\",\n      description: \"Menu demo dari IPAW Patch Manager.\"\n    });\n  },\n  deactivate(context) {\n    context.ui.unregisterMenuItems();\n  },\n  uninstall(context) {\n    context.ui.unregisterMenuItems();\n    return context.storage.remove(\"installed\");\n  }\n});"
+}

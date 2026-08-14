@@ -1,0 +1,225 @@
+Buatkan fitur IPAW Patch Manager untuk aplikasi ipawv2.html.
+
+TUJUAN
+
+Saya ingin setiap fitur baru IPAW dapat ditambahkan melalui file patch, tanpa harus mengganti atau rewrite seluruh ipawv2.html.
+
+Konsep:
+
+IPAW Core
+   ↓
+Patch Manager
+   ↓
+Patch 1
+Patch 2
+Patch 3
+dst.
+
+ATURAN PENTING
+
+* Jangan rewrite ipawv2.html.
+* Jangan menghapus/mengubah fitur existing.
+* Jangan mengubah database/storage existing.
+* Jangan membuat backend/server baru.
+* Harus tetap Offline First.
+* Gunakan IndexedDB/storage existing jika diperlukan.
+* Ikuti UI/UX IPAW yang sudah ada.
+* Gunakan sistem login/role existing.
+
+FITUR PATCH MANAGER
+
+Tambahkan menu:
+
+Pengaturan → Patch Manager
+
+Fitur:
+
+1. Upload Patch
+2. Validasi Patch
+3. Preview Patch
+4. Backup sebelum install
+5. Install Patch
+6. Enable / Disable
+7. Update Patch
+8. Rollback
+9. Uninstall
+10. Patch Activity Log
+
+FORMAT PATCH
+
+Gunakan file:
+
+.ipawpatch
+
+Contoh:
+
+ipaw-action-center-1.0.0.ipawpatch
+ipaw-checklist-1.0.0.ipawpatch
+ipaw-monitoring-ktm-1.0.0.ipawpatch
+
+Setiap patch memiliki:
+
+id
+name
+version
+author
+description
+minIPAWVersion
+dependencies
+code
+
+Contoh API:
+
+IPAW.registerPatch({
+    id: "ipaw-demo",
+    name: "IPAW Demo",
+    version: "1.0.0",
+    install(context) {},
+    activate(context) {},
+    deactivate(context) {},
+    uninstall(context) {}
+});
+
+VALIDASI
+
+Sebelum install cek:
+
+* format patch
+* patch ID
+* version
+* kompatibilitas versi IPAW
+* dependency
+* duplicate/version update
+* checksum jika memungkinkan
+
+Alur:
+
+Upload
+ ↓
+Validate
+ ↓
+Preview
+ ↓
+Backup
+ ↓
+Install
+ ↓
+Activate
+ ↓
+Log
+
+Jika gagal:
+
+Error
+ ↓
+Rollback
+
+Patch yang error tidak boleh membuat IPAW Core ikut crash.
+
+PATCH REGISTRY
+
+Simpan daftar patch:
+
+ID
+Nama
+Versi
+Status
+Installed At
+Updated At
+Author
+
+Status:
+
+Active
+Disabled
+Error
+
+DEPENDENCY
+
+Patch dapat membutuhkan patch lain.
+
+Contoh:
+
+ipaw-monitoring-ktm
+requires:
+ipaw-monitoring-core >= 1.0.0
+
+Jika dependency tidak tersedia, jangan izinkan install.
+
+ROLE
+
+Jika role existing IPAW memiliki superuser dan officer:
+
+Superuser:
+
+* install
+* update
+* disable
+* enable
+* rollback
+* uninstall
+* melihat log
+
+Officer:
+
+* hanya melihat patch/status
+
+Jangan membuat login baru.
+
+SECURITY
+
+* Hindari eval() jika memungkinkan.
+* Gunakan namespace setiap patch.
+* Jangan izinkan patch menghapus database/data pasien.
+* Isolasi error patch dari Core.
+* Validasi manifest.
+* Gunakan checksum/hash jika memungkinkan.
+
+PATCH TEMPLATE
+
+Tambahkan tombol:
+
+Download Patch Template
+
+Template tersebut nantinya bisa saya gunakan untuk meminta AI membuat patch baru.
+
+Contoh:
+
+ipaw-action-center-1.0.0.ipawpatch
+ipaw-checklist-1.0.0.ipawpatch
+ipaw-monitoring-ktm-1.0.0.ipawpatch
+ipaw-whatsapp-1.0.0.ipawpatch
+
+TEST
+
+Buat satu patch demo:
+
+ipaw-demo-patch-1.0.0.ipawpatch
+
+Patch hanya menambahkan menu 🧩 Patch Test.
+
+Test seluruh proses:
+
+Upload → Validate → Preview → Install → Activate
+→ Disable → Enable → Uninstall
+
+Pastikan IPAW Core tetap berjalan.
+
+SEBELUM CODING
+
+Pertama analisis ipawv2.html:
+
+* struktur aplikasi
+* IndexedDB/storage
+* authentication
+* role
+* menu/navigation
+* event system
+* modul existing
+
+Kemudian implementasikan Patch Manager dengan perubahan seminimal mungkin.
+
+PRIORITAS:
+Stability > Compatibility > Security > Modularity > UI.
+
+Jangan merusak fitur IPAW yang sudah berjalan.

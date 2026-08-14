@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "IP Admission Workspace"
+description = "A hospital admission operations workspace for monitoring inpatient patients, KTM and IGD status, billing, handovers, cloud backup, and offline use."
+version = "1.0.0"
+id = "artifacts/emc-admission"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 5173
+
+[services.development]
+run = "pnpm --filter @workspace/emc-admission run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/emc-admission", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/emc-admission/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26052"
+BASE_PATH = "/"

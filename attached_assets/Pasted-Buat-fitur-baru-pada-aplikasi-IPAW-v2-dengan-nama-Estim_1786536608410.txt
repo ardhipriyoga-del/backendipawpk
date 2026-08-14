@@ -1,0 +1,301 @@
+Buat fitur baru pada aplikasi IPAW v2 dengan nama “Estimasi Biaya Tindakan”.
+Fitur ini HARUS BERDIRI SENDIRI dan TIDAK digabungkan dengan fitur Buat CP. Keduanya hanya boleh menggunakan sumber data yang sama yaitu Master Tarif, tetapi workflow dan penyimpanannya harus terpisah.
+TUJUAN FITUR
+Fitur digunakan oleh petugas untuk membuat estimasi biaya tindakan yang akan diberikan kepada pasien/keluarga sebelum tindakan dilakukan.
+Output akhirnya adalah lembar Estimasi Biaya Tindakan yang dapat dicetak/diberikan kepada keluarga pasien untuk menentukan apakah tindakan tersebut:
+* DISETUJUI
+* TIDAK DISETUJUI
+* MENUNGGU PERSETUJUAN
+Fitur ini BUKAN billing final dan BUKAN pembuatan CP.
+ 
+⸻
+ 
+1. PILIH PASIEN
+Buat halaman/menu:
+Estimasi Biaya Tindakan
+Langkah pertama:
+Pilih Sumber Pasien
+* Rawat Inap
+* IGD
+Kemudian tampilkan pencarian pasien.
+Pencarian minimal berdasarkan:
+* Nama pasien
+* No. RM
+* Episode
+Setelah pasien dipilih, tampilkan:
+* Nama Pasien
+* No. RM
+* Episode
+* Ruangan
+* Penjamin
+* Informasi pasien lain yang tersedia di data IPAW
+Jangan membuat data pasien baru. Gunakan data pasien yang sudah tersedia di IPAW.
+ 
+⸻
+ 
+2. PILIH KELAS TARIF
+Setelah pasien dipilih, user harus memilih:
+Kelas Tarif
+Gunakan mapping kelas tarif yang sudah digunakan oleh IPAW/Master Tarif.
+Contoh:
+* Kelas III
+* Kelas II
+* Kelas I
+* VIP
+* Suite
+Harga tindakan HARUS diambil dari Master Tarif sesuai kelas yang dipilih.
+Jangan hardcode harga tarif di source code.
+ 
+⸻
+ 
+3. SEARCHING ITEM MASTER TARIF
+Buat komponen:
+Cari Tindakan / Item Tarif
+User dapat mengetik:
+* nama tindakan
+* kode tarif
+* kata kunci
+Sistem melakukan pencarian ke Master Tarif.
+Hasil pencarian menampilkan minimal:
+* Kode Tarif
+* Nama Item/Tindakan
+* Kelompok/Kategori
+* Tarif sesuai kelas yang dipilih
+User dapat klik:
++ Tambahkan
+Item masuk ke daftar estimasi.
+ 
+⸻
+ 
+4. DAFTAR ITEM ESTIMASI
+Buat tabel:
+No	Kode	Tindakan/Item	Qty	Tarif	Subtotal	Aksi
+Ketentuan:
+* Qty default = 1
+* Qty dapat diedit
+* Subtotal = Qty × Tarif
+* Total dihitung otomatis
+* User dapat menghapus item
+* User dapat menambahkan item sebanyak yang diperlukan
+* Jangan mengubah Master Tarif ketika mengubah Qty atau membuat estimasi
+Jika item yang sama ditambahkan dua kali, berikan pilihan untuk menggabungkan Qty atau tetap sebagai item terpisah.
+ 
+⸻
+ 
+5. TOTAL ESTIMASI
+Tampilkan secara jelas:
+TOTAL ESTIMASI BIAYA
+Format Rupiah Indonesia:
+Rp 8.750.000
+Tambahkan disclaimer:
+Estimasi biaya ini merupakan perkiraan berdasarkan Tarif yang berlaku dan bukan merupakan tagihan akhir. Biaya aktual dapat berubah sesuai tindakan, penggunaan obat/BMHP, kondisi pasien, dan layanan tambahan yang diberikan.
+ 
+⸻
+ 
+6. CATATAN
+Sediakan field:
+Catatan / Keterangan
+Contoh:
+* Rencana tindakan dokter
+* Informasi tambahan
+* Catatan petugas
+Field ini opsional.
+ 
+⸻
+ 
+7. SIMPAN ESTIMASI
+Buat tombol:
+Simpan Estimasi
+Saat disimpan, simpan snapshot data estimasi, bukan hanya ID Master Tarif.
+Minimal data yang disimpan:
+id_estimasi
+tanggal
+waktu
+sumber_pasien
+no_rm
+nama_pasien
+episode
+ruangan
+penjamin
+kelas_tarif
+items
+total_estimasi
+catatan
+status_persetujuan
+dibuat_oleh
+updated_at
+Untuk setiap item simpan snapshot:
+kode_tarif
+nama_item
+kelompok
+qty
+tarif
+subtotal
+PENTING:
+Jika Master Tarif berubah setelah estimasi dibuat, histori estimasi lama TIDAK BOLEH berubah.
+ 
+⸻
+ 
+8. STATUS PERSETUJUAN
+Setelah estimasi dibuat, status default:
+MENUNGGU PERSETUJUAN
+Sediakan pilihan:
+🟡 MENUNGGU PERSETUJUAN 🟢 DISETUJUI 🔴 TIDAK DISETUJUI
+Jika status diubah menjadi Disetujui/Tidak Disetujui, simpan:
+* status
+* tanggal
+* waktu
+* user yang mengubah status
+ 
+⸻
+ 
+9. DATA PERSETUJUAN KELUARGA
+Sediakan bagian:
+Persetujuan Pasien/Keluarga
+Field:
+* Nama pasien/keluarga
+* Hubungan dengan pasien
+* Status persetujuan
+* Tanggal
+* Waktu
+Status:
+MENYETUJUI
+atau
+TIDAK MENYETUJUI
+Jangan membuat persetujuan medis baru. Fitur ini hanya mencatat keputusan terhadap estimasi biaya/tindakan sesuai kebutuhan workflow aplikasi.
+ 
+⸻
+ 
+10. OUTPUT / CETAK
+Buat tombol:
+Cetak Estimasi
+Output harus berupa dokumen yang rapi dan profesional untuk diberikan kepada pasien/keluarga.
+Judul:
+ESTIMASI BIAYA TINDAKAN
+Isi:
+IDENTITAS PASIEN
+Nama Pasien No. RM Episode Ruangan Penjamin Kelas Tarif
+RINCIAN ESTIMASI
+No	Tindakan	Qty	Tarif	Estimasi
+Kemudian:
+TOTAL ESTIMASI BIAYA
+Rp X.XXX.XXX
+Lalu disclaimer estimasi.
+Kemudian:
+PERSETUJUAN PASIEN/KELUARGA
+Saya telah menerima informasi mengenai estimasi biaya tindakan tersebut.
+Status:
+☐ MENYETUJUI ☐ TIDAK MENYETUJUI
+Nama: ______________________
+Hubungan: ___________________
+Tanggal: ____________________
+Tanda Tangan: _______________
+Sediakan area tanda tangan yang cukup.
+ 
+⸻
+ 
+11. RIWAYAT ESTIMASI
+Buat halaman:
+Riwayat Estimasi Biaya
+User dapat melihat estimasi yang pernah dibuat.
+Filter:
+* Tanggal
+* Nama pasien
+* No. RM
+* Episode
+* Status
+* User pembuat
+Tabel:
+Tanggal	Pasien	Episode	Total Estimasi	Status	Dibuat Oleh	Aksi
+Aksi:
+* Lihat
+* Edit jika masih Draft/Menunggu Persetujuan
+* Cetak
+* Ubah status
+Estimasi yang sudah memiliki status final sebaiknya tidak dapat diedit sembarangan. Jika perlu perubahan, buat mekanisme membuat versi/revisi baru agar histori tetap terjaga.
+ 
+⸻
+ 
+12. DASHBOARD RINGKAS
+Di halaman utama fitur tampilkan summary:
+Menunggu Persetujuan Jumlah estimasi
+Disetujui Jumlah estimasi
+Tidak Disetujui Jumlah estimasi
+Total Estimasi Hari Ini Total nominal estimasi
+Klik summary dapat membuka daftar yang sesuai.
+ 
+⸻
+ 
+13. UI/UX
+Gunakan style yang konsisten dengan IPAW v2.
+Prioritaskan:
+* Simple
+* Cepat
+* Profesional
+* Responsive
+* Mudah digunakan petugas Admission/Kasir
+* Tidak terlalu banyak popup
+* Search item tarif harus cepat
+* Total estimasi selalu terlihat
+Gunakan format Rupiah Indonesia:
+Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  maximumFractionDigits: 0
+})
+ 
+⸻
+ 
+14. PENYIMPANAN
+Ikuti arsitektur storage yang sudah digunakan IPAW v2.
+Jika IPAW menggunakan IndexedDB, gunakan IndexedDB.
+Buat object store/collection khusus:
+estimasi_biaya_tindakan
+JANGAN mencampurkan data estimasi dengan data:
+buat_cp
+master_tarif
+billing
+Master Tarif hanya sebagai sumber harga.
+ 
+⸻
+ 
+15. KEAMANAN DATA
+Jangan mengubah atau menghapus Master Tarif dari fitur ini.
+Jangan menyimpan API key.
+Jangan membuat endpoint baru jika belum diperlukan.
+Gunakan struktur dan helper existing IPAW jika sudah tersedia.
+Sebelum membuat kode baru, periksa terlebih dahulu:
+* struktur IPAW v2
+* sistem routing/menu
+* struktur IndexedDB
+* struktur Master Tarif
+* struktur data pasien Rawat Inap
+* struktur data pasien IGD
+* sistem user/login
+* sistem export/cetak yang sudah ada
+Gunakan komponen/helper existing jika tersedia agar tidak membuat duplikasi kode.
+ 
+⸻
+ 
+16. PENTING — JANGAN RUSAK FITUR EXISTING
+Implementasi harus bersifat modular.
+Jangan mengubah:
+* Master Tarif
+* Buat CP
+* Billing Checker
+* Data pasien
+* Login
+* IndexedDB existing
+* fitur lain yang sudah berjalan
+Kecuali benar-benar diperlukan untuk integrasi menu.
+Jika terdapat struktur existing yang berbeda dengan asumsi di prompt ini, ikuti struktur existing IPAW v2 dan lakukan adaptasi, bukan membuat struktur baru yang bertentangan.
+ 
+⸻
+ 
+HASIL AKHIR YANG DIHARAPKAN
+Workflow harus menjadi:
+Estimasi Biaya Tindakan
+→ Pilih Rawat Inap / IGD → Pilih Pasien → Pilih Kelas Tarif → Search Master Tarif → Tambahkan Tindakan → Atur Qty → Hitung Subtotal → Hitung Total Estimasi → Simpan → Cetak untuk keluarga → Keluarga memilih Disetujui / Tidak Disetujui → Simpan status → Masuk Riwayat Estimasi
+Sekali lagi:
+FITUR INI BERDIRI SENDIRI DAN TIDAK BOLEH DIGABUNGKAN DENGAN FITUR BUAT CP.
+Buat implementasi dengan kode yang rapi, modular, mudah dirawat, dan mengikuti arsitektur IPAW v2 yang sudah ada.
